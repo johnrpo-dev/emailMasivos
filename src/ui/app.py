@@ -223,9 +223,7 @@ class App(ctk.CTk):
             self.after(0, self.update_ui_status, "¡Proceso masivo completado!")
             
             if errores:
-                msg = "El proceso finalizó, pero hubo algunos errores:\n\n" + "\n".join(errores[:10])
-                if len(errores) > 10: msg += f"\n... y {len(errores)-10} errores más. Revisa app.log."
-                self.after(0, lambda: messagebox.showwarning("Completado con errores", msg))
+                self.after(0, lambda: self.show_results_modal(errores, total))
             else:
                 self.after(0, lambda: messagebox.showinfo("Completado", "El proceso ha finalizado con éxito sin errores."))
             
@@ -235,3 +233,38 @@ class App(ctk.CTk):
             
         finally:
             self.after(0, lambda: self.btn_start.configure(state="normal", fg_color="#10b981"))
+
+    def show_results_modal(self, errores, total):
+        modal = ctk.CTkToplevel(self)
+        modal.title("Reporte de Errores del Envío")
+        modal.geometry("550x450")
+        modal.resizable(False, False)
+        
+        # Para evitar que el usuario interactúe con la ventana principal mientras está abierto
+        modal.transient(self)
+        modal.grab_set()
+
+        lbl_title = ctk.CTkLabel(modal, text="Proceso Finalizado con Observaciones", font=self.font_title)
+        lbl_title.pack(pady=(20, 10))
+
+        exitosos = total - len(errores)
+        lbl_summary = ctk.CTkLabel(modal, text=f"Total procesados: {total} | Éxitos: {exitosos} | Errores: {len(errores)}", font=self.font_label)
+        lbl_summary.pack(pady=(0, 10))
+
+        # Textbox con los errores
+        txt_errors = ctk.CTkTextbox(modal, width=500, height=250, font=self.font_text)
+        txt_errors.pack(pady=10, padx=20)
+        
+        report_text = "--- REPORTE DE ERRORES ---\n\n"
+        report_text += "\n".join(errores)
+        
+        txt_errors.insert("0.0", report_text)
+        txt_errors.configure(state="disabled") # Solo lectura
+
+        def copy_to_clipboard():
+            self.clipboard_clear()
+            self.clipboard_append(report_text)
+            messagebox.showinfo("Copiado", "El reporte ha sido copiado al portapapeles.", parent=modal)
+
+        btn_copy = ctk.CTkButton(modal, text="Copiar Reporte", command=copy_to_clipboard)
+        btn_copy.pack(pady=(10, 20))
