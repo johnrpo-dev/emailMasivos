@@ -1,0 +1,6 @@
+{
+    "smtp_user": "johnsod8729@gmail.com",
+    "smtp_password": "em9zZ3V2b29sZXJyd2pwZw==",
+    "email_subject": "Documento de {id_servicio}",
+    "email_body": "Estimado usuario,\n\nAdjunto encontrará su documento seguro. Para garantizar la máxima privacidad, este archivo ha sido cifrado con altos estándares de seguridad (AES-256).\n\nPara abrir el archivo, por favor ingrese su contraseña personal. Su contraseña está formada por:\n1. Las dos primeras letras de su nombre.\n2. Las dos primeras letras de su apellido.\n3. Su segmento de seguridad personal (pass_segment).\n* Todo debe ir en MAYÚSCULAS y sin espacios.\n\nEjemplo: Juan Perez, segmento 4050 -> Contraseña: JUPE4050\n\nAtentamente,\nEl equipo."
+}
