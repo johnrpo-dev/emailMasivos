@@ -4,6 +4,7 @@ __pycache__/
 dist/
 build/
 *.spec
+config.json
 data/config.json
 data/output/
 .env

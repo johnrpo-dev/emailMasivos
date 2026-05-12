@@ -47,3 +47,11 @@ Una vez el archivo es cifrado y atado al correo del destinatario, el sistema neg
 
 #### E. Destrucción Segura de Archivos Temporales
 Durante el proceso, el sistema crea versiones cifradas temporales de los PDFs para adjuntarlas al correo. Inmediatamente después de recibir la confirmación de entrega por parte del servidor SMTP, el sistema ejecuta una subrutina de "Secure Cleanup" que elimina y sobreescribe de la memoria física estos archivos temporales, no dejando rastros ni basura digital vulnerable en la computadora.
+
+---
+
+### 5. Transparencia y Auditoría Técnica
+Para garantizar la total transparencia sobre el manejo de los datos y certificar las arquitecturas de seguridad mencionadas, el código fuente completo de esta solución está disponible para auditoría.
+
+El equipo técnico o de seguridad informática de la empresa puede revisar el repositorio oficial en el siguiente enlace:
+🔗 **[Repositorio de Código - Sistema de Envío Masivo Seguro](https://github.com/johnrpo-dev/emailMasivos)**
