@@ -158,9 +158,13 @@ class App(ctk.CTk):
         if progress is not None:
             self.progress_bar.set(progress)
 
-    def run_workflow(self):
+    def run_workflow(self, records_to_process=None):
         try:
-            records = DataManager.load_csv(self.csv_path.get())
+            if records_to_process is None:
+                records = DataManager.load_csv(self.csv_path.get())
+            else:
+                records = records_to_process
+            
             total = len(records)
             
             # Refrescar config antes de enviar
@@ -168,6 +172,7 @@ class App(ctk.CTk):
             subject_template = config.get("email_subject", "")
             
             errores = []
+            records_fallidos = []
             
             email_service = EmailService()
             self.after(0, self.update_ui_status, "Conectando al servidor SMTP...")
@@ -194,6 +199,7 @@ class App(ctk.CTk):
                 if not os.path.exists(input_pdf):
                     logger.error(f"Falta el archivo PDF: {input_pdf}")
                     errores.append(f"{email}: PDF no encontrado ({id_archivo})")
+                    records_fallidos.append(record)
                     self.after(0, self.update_ui_status, f"Procesando {i+1} de {total}: {email} (Omitido: Sin PDF)", (i + 1) / total)
                     continue
                 
@@ -213,6 +219,7 @@ class App(ctk.CTk):
                 except Exception as e:
                     logger.error(f"Fallo con {email}: {str(e)}")
                     errores.append(f"{email}: Error ({str(e)})")
+                    records_fallidos.append(record)
                 finally:
                     PDFCrypto.secure_cleanup(temp_pdf)
                     
@@ -223,7 +230,7 @@ class App(ctk.CTk):
             self.after(0, self.update_ui_status, "¡Proceso masivo completado!")
             
             if errores:
-                self.after(0, lambda: self.show_results_modal(errores, total))
+                self.after(0, lambda: self.show_results_modal(errores, total, records_fallidos))
             else:
                 self.after(0, lambda: messagebox.showinfo("Completado", "El proceso ha finalizado con éxito sin errores."))
             
@@ -234,7 +241,7 @@ class App(ctk.CTk):
         finally:
             self.after(0, lambda: self.btn_start.configure(state="normal", fg_color="#10b981"))
 
-    def show_results_modal(self, errores, total):
+    def show_results_modal(self, errores, total, records_fallidos):
         modal = ctk.CTkToplevel(self)
         modal.title("Reporte de Errores del Envío")
         modal.geometry("550x450")
@@ -266,5 +273,20 @@ class App(ctk.CTk):
             self.clipboard_append(report_text)
             messagebox.showinfo("Copiado", "El reporte ha sido copiado al portapapeles.", parent=modal)
 
-        btn_copy = ctk.CTkButton(modal, text="Copiar Reporte", command=copy_to_clipboard)
-        btn_copy.pack(pady=(10, 20))
+        def retry_failed():
+            modal.destroy()
+            self.btn_start.configure(state="disabled", fg_color="#4b5563")
+            self.progress_bar.set(0)
+            self.lbl_status.configure(text=f"Reintentando {len(records_fallidos)} envíos fallidos...")
+            threading.Thread(target=self.run_workflow, args=(records_fallidos,), daemon=True).start()
+
+        # Botones en la parte inferior
+        btn_frame = ctk.CTkFrame(modal, fg_color="transparent")
+        btn_frame.pack(pady=(10, 20), fill="x", padx=20)
+        
+        btn_copy = ctk.CTkButton(btn_frame, text="Copiar Reporte", command=copy_to_clipboard, width=150, fg_color="#4b5563", hover_color="#374151")
+        btn_copy.pack(side="left", padx=10, expand=True)
+
+        if records_fallidos:
+            btn_retry = ctk.CTkButton(btn_frame, text="Reintentar Fallidos", command=retry_failed, width=150, fg_color="#f59e0b", hover_color="#d97706", text_color="white")
+            btn_retry.pack(side="right", padx=10, expand=True)
