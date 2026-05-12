@@ -167,6 +167,8 @@ class App(ctk.CTk):
             config = ConfigManager.get_config()
             subject_template = config.get("email_subject", "")
             
+            errores = []
+            
             email_service = EmailService()
             self.after(0, self.update_ui_status, "Conectando al servidor SMTP...")
             email_service.connect()
@@ -189,6 +191,12 @@ class App(ctk.CTk):
                 if not id_archivo.lower().endswith(".pdf"): id_archivo += ".pdf"
                 
                 input_pdf = os.path.join(self.pdf_dir.get(), id_archivo)
+                if not os.path.exists(input_pdf):
+                    logger.error(f"Falta el archivo PDF: {input_pdf}")
+                    errores.append(f"{email}: PDF no encontrado ({id_archivo})")
+                    self.after(0, self.update_ui_status, f"Procesando {i+1} de {total}: {email} (Omitido: Sin PDF)", (i + 1) / total)
+                    continue
+                
                 temp_pdf = os.path.join(self.pdf_dir.get(), f"temp_{id_archivo}")
                 
                 self.after(0, self.update_ui_status, f"Procesando {i+1} de {total}: {email}")
@@ -204,6 +212,7 @@ class App(ctk.CTk):
                     logger.info(f"Éxito: {email}")
                 except Exception as e:
                     logger.error(f"Fallo con {email}: {str(e)}")
+                    errores.append(f"{email}: Error ({str(e)})")
                 finally:
                     PDFCrypto.secure_cleanup(temp_pdf)
                     
@@ -211,8 +220,14 @@ class App(ctk.CTk):
                 
             email_service.disconnect()
                 
-            self.after(0, self.update_ui_status, "¡Proceso masivo completado con éxito!")
-            self.after(0, lambda: messagebox.showinfo("Completado", "El proceso ha finalizado. Revisa app.log para detalles."))
+            self.after(0, self.update_ui_status, "¡Proceso masivo completado!")
+            
+            if errores:
+                msg = "El proceso finalizó, pero hubo algunos errores:\n\n" + "\n".join(errores[:10])
+                if len(errores) > 10: msg += f"\n... y {len(errores)-10} errores más. Revisa app.log."
+                self.after(0, lambda: messagebox.showwarning("Completado con errores", msg))
+            else:
+                self.after(0, lambda: messagebox.showinfo("Completado", "El proceso ha finalizado con éxito sin errores."))
             
         except Exception as e:
             self.after(0, self.update_ui_status, "Error crítico en el proceso.")
