@@ -7,7 +7,7 @@ from src.core.data_manager import DataManager
 from src.core.pdf_crypto import PDFCrypto
 from src.core.email_service import EmailService
 from src.config.config_manager import ConfigManager
-from src.utils.logger import logger
+from src.utils.logger import logger, mask_email
 
 class App(ctk.CTk):
     def __init__(self):
@@ -240,7 +240,7 @@ class App(ctk.CTk):
                 
                 input_pdf = os.path.join(self.pdf_dir.get(), id_archivo)
                 if not os.path.exists(input_pdf):
-                    logger.error(f"Falta el archivo PDF: {input_pdf}")
+                    logger.error(f"Falta el archivo PDF: {input_pdf} (Destino: {mask_email(email)})")
                     errores.append(f"{email}: PDF no encontrado ({id_archivo})")
                     records_fallidos.append(record)
                     self.after(0, self.update_ui_status, f"Procesando {i+1} de {total}: {email} (Omitido: Sin PDF)", (i + 1) / total)
@@ -258,9 +258,9 @@ class App(ctk.CTk):
                     subject = subject_template.format(id_servicio=id_servicio)
                     
                     email_service.send_email_with_attachment(email, subject, temp_pdf, filename_override=id_archivo)
-                    logger.info(f"Éxito: {email}")
+                    logger.info(f"Éxito: {mask_email(email)}")
                 except Exception as e:
-                    logger.error(f"Fallo con {email}: {str(e)}")
+                    logger.error(f"Fallo con {mask_email(email)}: {str(e)}")
                     errores.append(f"{email}: Error ({str(e)})")
                     records_fallidos.append(record)
                 finally:

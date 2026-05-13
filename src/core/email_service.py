@@ -6,7 +6,7 @@ from email.mime.application import MIMEApplication
 from email.header import Header
 from email.utils import make_msgid, formatdate
 from src.config.config_manager import ConfigManager
-from src.utils.logger import logger
+from src.utils.logger import logger, mask_email
 
 class EmailService:
     """Clase para el envío de correos electrónicos vía SMTP."""
@@ -71,9 +71,9 @@ class EmailService:
                 
             self.server.send_message(msg)
                 
-            logger.info(f"Correo enviado exitosamente a {to_email}")
+            logger.info(f"Correo enviado exitosamente a {mask_email(to_email)}")
             return True
             
         except Exception as e:
-            logger.error(f"Error al enviar correo a {to_email}: {str(e)}")
+            logger.error(f"Error al enviar correo a {mask_email(to_email)}: {str(e)}")
             raise e

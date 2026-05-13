@@ -25,5 +25,21 @@ def setup_logger(log_file="app.log"):
         
     return logger
 
+def mask_email(email: str) -> str:
+    """Ofusca un correo electrónico (ej. juan.perez@gmail.com -> j***z@gmail.com)."""
+    if not email or "@" not in email:
+        return email
+    
+    parts = email.split("@")
+    name = parts[0]
+    domain = parts[1]
+    
+    if len(name) <= 2:
+        masked_name = name[0] + "***"
+    else:
+        masked_name = name[0] + "***" + name[-1]
+        
+    return f"{masked_name}@{domain}"
+
 # Instancia global del logger
 logger = setup_logger()

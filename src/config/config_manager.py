@@ -1,33 +1,17 @@
 import json
 import os
-import base64
+import keyring
 from src.utils.logger import logger
 
 class ConfigManager:
     """Gestiona la lectura y escritura de la configuración dinámica del sistema."""
     
     CONFIG_FILE = "config.json"
+    SERVICE_NAME = "SEMS_App"
     
     @staticmethod
-    def _encode_password(password: str) -> str:
-        """Ofusca la contraseña en Base64."""
-        if not password:
-            return ""
-        return base64.b64encode(password.encode('utf-8')).decode('utf-8')
-        
-    @staticmethod
-    def _decode_password(encoded_password: str) -> str:
-        """Desofusca la contraseña desde Base64."""
-        if not encoded_password:
-            return ""
-        try:
-            return base64.b64decode(encoded_password.encode('utf-8')).decode('utf-8')
-        except Exception:
-            return ""
-
-    @staticmethod
     def get_config() -> dict:
-        """Retorna la configuración actual. Si no existe, retorna valores por defecto."""
+        """Retorna la configuración actual desde config.json y Keyring."""
         default_config = {
             "smtp_user": "",
             "smtp_password": "",
@@ -45,8 +29,18 @@ class ConfigManager:
             # Combinar datos cargados con defaults por si faltan claves
             config = {**default_config, **data}
             
-            # Decodificar contraseña
-            config["smtp_password"] = ConfigManager._decode_password(config.get("smtp_password", ""))
+            # Obtener contraseña desde Windows Credential Manager
+            user = config.get("smtp_user", "")
+            if user:
+                try:
+                    pw = keyring.get_password(ConfigManager.SERVICE_NAME, user)
+                    config["smtp_password"] = pw if pw else ""
+                except Exception as e:
+                    logger.error(f"Error al leer keyring: {e}")
+                    config["smtp_password"] = ""
+            else:
+                config["smtp_password"] = ""
+                
             return config
             
         except Exception as e:
@@ -55,19 +49,24 @@ class ConfigManager:
             
     @staticmethod
     def save_config(smtp_user, smtp_password, email_subject, email_body):
-        """Guarda la configuración actualizando el archivo."""
+        """Guarda la configuración actualizando el archivo y Keyring."""
         config = {
             "smtp_user": smtp_user,
-            "smtp_password": ConfigManager._encode_password(smtp_password),
             "email_subject": email_subject,
             "email_body": email_body
         }
         
         try:
+            # Guardar datos públicos en JSON
             with open(ConfigManager.CONFIG_FILE, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=4, ensure_ascii=False)
-            logger.info("Configuración guardada exitosamente.")
+                
+            # Guardar contraseña de forma segura en Windows Credential Manager
+            if smtp_user and smtp_password:
+                keyring.set_password(ConfigManager.SERVICE_NAME, smtp_user, smtp_password)
+                
+            logger.info("Configuración y credenciales guardadas exitosamente.")
             return True
         except Exception as e:
-            logger.error(f"Error al guardar config.json: {e}")
+            logger.error(f"Error al guardar configuración: {e}")
             return False
