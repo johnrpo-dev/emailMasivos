@@ -29,6 +29,8 @@ class App(ctk.CTk):
         # Variables de Configuración
         self.config_user = ctk.StringVar()
         self.config_pass = ctk.StringVar()
+        self.config_host = ctk.StringVar()
+        self.config_port = ctk.StringVar()
         self.config_subject = ctk.StringVar()
         
         # Tipografías base
@@ -45,6 +47,8 @@ class App(ctk.CTk):
         config = ConfigManager.get_config()
         self.config_user.set(config.get("smtp_user", ""))
         self.config_pass.set(config.get("smtp_password", ""))
+        self.config_host.set(config.get("smtp_host", "smtp.gmail.com"))
+        self.config_port.set(str(config.get("smtp_port", 587)))
         self.config_subject.set(config.get("email_subject", ""))
         self.initial_body = config.get("email_body", "")
 
@@ -140,11 +144,17 @@ class App(ctk.CTk):
         card_creds.pack(fill="x", pady=(0, 20), ipady=10)
         card_creds.grid_columnconfigure(1, weight=1)
         
-        ctk.CTkLabel(card_creds, text="Correo Remitente:", font=self.font_label).grid(row=0, column=0, padx=20, pady=(25, 15), sticky="w")
-        ctk.CTkEntry(card_creds, textvariable=self.config_user, font=self.font_text, height=35, placeholder_text="ej. ventas@empresa.com").grid(row=0, column=1, padx=20, pady=(25, 15), sticky="ew")
+        ctk.CTkLabel(card_creds, text="Correo Remitente:", font=self.font_label).grid(row=0, column=0, padx=20, pady=(25, 10), sticky="w")
+        ctk.CTkEntry(card_creds, textvariable=self.config_user, font=self.font_text, height=35, placeholder_text="ej. ventas@empresa.com").grid(row=0, column=1, padx=20, pady=(25, 10), sticky="ew")
         
-        ctk.CTkLabel(card_creds, text="Código de App (Google):", font=self.font_label).grid(row=1, column=0, padx=20, pady=(0, 25), sticky="w")
-        ctk.CTkEntry(card_creds, textvariable=self.config_pass, show="*", font=self.font_text, height=35, placeholder_text="Contraseña de 16 caracteres").grid(row=1, column=1, padx=20, pady=(0, 25), sticky="ew")
+        ctk.CTkLabel(card_creds, text="Código de App:", font=self.font_label).grid(row=1, column=0, padx=20, pady=(0, 10), sticky="w")
+        ctk.CTkEntry(card_creds, textvariable=self.config_pass, show="*", font=self.font_text, height=35, placeholder_text="Contraseña de 16 caracteres").grid(row=1, column=1, padx=20, pady=(0, 10), sticky="ew")
+        
+        ctk.CTkLabel(card_creds, text="Servidor SMTP:", font=self.font_label).grid(row=2, column=0, padx=20, pady=(0, 10), sticky="w")
+        ctk.CTkEntry(card_creds, textvariable=self.config_host, font=self.font_text, height=35, placeholder_text="smtp.gmail.com").grid(row=2, column=1, padx=20, pady=(0, 10), sticky="ew")
+        
+        ctk.CTkLabel(card_creds, text="Puerto:", font=self.font_label).grid(row=3, column=0, padx=20, pady=(0, 25), sticky="w")
+        ctk.CTkEntry(card_creds, textvariable=self.config_port, font=self.font_text, height=35, width=100, placeholder_text="587").grid(row=3, column=1, padx=20, pady=(0, 25), sticky="w")
 
         # Card Plantilla
         card_tpl = ctk.CTkFrame(self.config_frame, corner_radius=15, fg_color=("gray85", "gray17"))
@@ -173,7 +183,9 @@ class App(ctk.CTk):
     def save_settings(self):
         body = self.txt_body.get("0.0", "end").strip()
         success = ConfigManager.save_config(
-            self.config_user.get(), self.config_pass.get(), self.config_subject.get(), body
+            self.config_user.get(), self.config_pass.get(),
+            self.config_host.get(), self.config_port.get(),
+            self.config_subject.get(), body
         )
         if success:
             messagebox.showinfo("Éxito", "Configuración guardada correctamente.")
@@ -221,54 +233,57 @@ class App(ctk.CTk):
             self.after(0, self.update_ui_status, "Conectando al servidor SMTP...")
             email_service.connect()
             
-            for i, record in enumerate(records):
-                email = str(record.get("email", "")).strip()
-                id_archivo = str(record.get("id_archivo", "")).strip()
-                id_servicio = str(record.get("id_servicio", "")).strip()
-                
-                # Nueva lógica: La contraseña será la cédula
-                cedula = str(record.get("cedula", "")).strip()
-                
-                # Validar existencia de datos mínimos
-                if not email or not id_archivo or not cedula:
-                    logger.error(f"Fila {i+1} omitida: Faltan datos (email, id_archivo o cedula).")
-                    continue
-                
-                dynamic_password = cedula
-                
-                if not id_archivo.lower().endswith(".pdf"): id_archivo += ".pdf"
-                
-                input_pdf = os.path.join(self.pdf_dir.get(), id_archivo)
-                if not os.path.exists(input_pdf):
-                    logger.error(f"Falta el archivo PDF: {input_pdf} (Destino: {mask_email(email)})")
-                    errores.append(f"{email}: PDF no encontrado ({id_archivo})")
-                    records_fallidos.append(record)
-                    self.after(0, self.update_ui_status, f"Procesando {i+1} de {total}: {email} (Omitido: Sin PDF)", (i + 1) / total)
-                    continue
-                
-                temp_pdf = os.path.join(self.pdf_dir.get(), f"temp_{id_archivo}")
-                
-                self.after(0, self.update_ui_status, f"Procesando {i+1} de {total}: {email}")
-                
-                try:
-                    # Encriptación con la clave dinámica y única
-                    PDFCrypto.encrypt_pdf(input_pdf, temp_pdf, dynamic_password)
+            try:
+                for i, record in enumerate(records):
+                    email = str(record.get("email", "")).strip()
+                    id_archivo = str(record.get("id_archivo", "")).strip()
+                    id_servicio = str(record.get("id_servicio", "")).strip()
                     
-                    # Formatear el asunto
-                    subject = subject_template.format(id_servicio=id_servicio)
+                    # Nueva lógica: La contraseña será la cédula
+                    cedula = str(record.get("cedula", "")).strip()
                     
-                    email_service.send_email_with_attachment(email, subject, temp_pdf, filename_override=id_archivo)
-                    logger.info(f"Éxito: {mask_email(email)}")
-                except Exception as e:
-                    logger.error(f"Fallo con {mask_email(email)}: {str(e)}")
-                    errores.append(f"{email}: Error ({str(e)})")
-                    records_fallidos.append(record)
-                finally:
-                    PDFCrypto.secure_cleanup(temp_pdf)
+                    # Validar existencia de datos mínimos
+                    if not email or not id_archivo or not cedula:
+                        logger.error(f"Fila {i+1} omitida: Faltan datos (email, id_archivo o cedula).")
+                        continue
                     
-                self.after(0, self.update_ui_status, f"Procesando {i+1} de {total}: {email}", (i + 1) / total)
-                
-            email_service.disconnect()
+                    dynamic_password = cedula
+                    
+                    if not id_archivo.lower().endswith(".pdf"): id_archivo += ".pdf"
+                    
+                    # Sanitizar contra Path Traversal (OWASP A01)
+                    id_archivo = os.path.basename(id_archivo)
+                    input_pdf = os.path.join(self.pdf_dir.get(), id_archivo)
+                    if not os.path.exists(input_pdf):
+                        logger.error(f"Falta el archivo PDF: {input_pdf} (Destino: {mask_email(email)})")
+                        errores.append(f"{email}: PDF no encontrado ({id_archivo})")
+                        records_fallidos.append(record)
+                        self.after(0, self.update_ui_status, f"Procesando {i+1} de {total}: {email} (Omitido: Sin PDF)", (i + 1) / total)
+                        continue
+                    
+                    temp_pdf = os.path.join(self.pdf_dir.get(), f"temp_{id_archivo}")
+                    
+                    self.after(0, self.update_ui_status, f"Procesando {i+1} de {total}: {email}")
+                    
+                    try:
+                        # Encriptación con la clave dinámica y única
+                        PDFCrypto.encrypt_pdf(input_pdf, temp_pdf, dynamic_password)
+                        
+                        # Formatear el asunto (safe replace, sin format string injection)
+                        subject = subject_template.replace("{id_servicio}", id_servicio)
+                        
+                        email_service.send_email_with_attachment(email, subject, temp_pdf, filename_override=id_archivo)
+                        logger.info(f"Éxito: {mask_email(email)}")
+                    except Exception as e:
+                        logger.error(f"Fallo con {mask_email(email)}: {str(e)}")
+                        errores.append(f"{email}: Error ({str(e)})")
+                        records_fallidos.append(record)
+                    finally:
+                        PDFCrypto.secure_cleanup(temp_pdf)
+                        
+                    self.after(0, self.update_ui_status, f"Procesando {i+1} de {total}: {email}", (i + 1) / total)
+            finally:
+                email_service.disconnect()
                 
             self.after(0, self.update_ui_status, "¡Proceso masivo completado!")
             

@@ -1,4 +1,4 @@
-pandas==2.2.2
-pikepdf==8.15.1
+pandas==3.0.3
+pikepdf==10.5.1
 customtkinter==5.2.2
-keyring==25.1.0
+keyring==25.7.0

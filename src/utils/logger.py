@@ -1,5 +1,6 @@
 import logging
 import os
+from logging.handlers import RotatingFileHandler
 
 def setup_logger(log_file="app.log"):
     """Configura y retorna el logger principal de la aplicación."""
@@ -13,8 +14,8 @@ def setup_logger(log_file="app.log"):
             '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         )
         
-        # Handler para archivo
-        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        # Handler para archivo con rotación automática (5MB max, 3 backups)
+        file_handler = RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
         

@@ -12,11 +12,10 @@ class EmailService:
     """Clase para el envío de correos electrónicos vía SMTP."""
     
     def __init__(self):
-        self.host = "smtp.gmail.com"
-        self.port = 587
-        
         # Leemos configuración dinámica
         config = ConfigManager.get_config()
+        self.host = config.get("smtp_host", "smtp.gmail.com")
+        self.port = int(config.get("smtp_port", 587))
         self.user = config.get("smtp_user", "")
         self.password = config.get("smtp_password", "")
         self.email_body = config.get("email_body", "")
@@ -26,7 +25,7 @@ class EmailService:
         """Abre la conexión SMTP con el servidor."""
         if not self.user or not self.password:
             raise ValueError("Las credenciales SMTP no están configuradas correctamente en el archivo .env")
-        self.server = smtplib.SMTP(self.host, self.port)
+        self.server = smtplib.SMTP(self.host, self.port, timeout=30)
         self.server.starttls() # TLS 1.2
         self.server.login(self.user, self.password)
         
