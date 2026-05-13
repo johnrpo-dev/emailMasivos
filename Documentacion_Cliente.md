@@ -1,57 +1,117 @@
-# Documentación Técnica y Operativa
-## Sistema de Envío Masivo Seguro (SEMS)
+# SEMS Pro — Sistema de Envío Masivo Seguro
+### Ficha Técnica y Comercial — v2.0
 
 ---
 
-### 1. Resumen Ejecutivo
-El **Sistema de Envío Masivo Seguro** es una aplicación de escritorio diseñada a la medida para resolver el problema de distribución masiva de documentos altamente sensibles (ej. resultados médicos, nóminas, informes financieros). Su objetivo principal es garantizar que la información confidencial llegue a su destinatario legítimo, aplicando los más altos estándares de cifrado y privacidad, sin depender de servidores de terceros en la nube.
+## 1. Resumen Ejecutivo
+
+**SEMS Pro** es una solución de software de escritorio diseñada para la **distribución masiva y segura de documentos confidenciales** (nóminas, resultados médicos, informes financieros, contratos, etc.).
+
+Su diseño permite que un operador sin conocimientos técnicos envíe cientos o miles de documentos PDF protegidos individualmente, garantizando que solo el destinatario legítimo pueda abrir su archivo.
+
+> **Propuesta de Valor:** Elimina el riesgo legal y operativo de enviar información sensible por correo electrónico sin protección, cumpliendo con la **Ley 1581 de 2012 (Habeas Data)** y estándares internacionales de cifrado.
 
 ---
 
-### 2. ¿Cómo funciona la plataforma? (Flujo Operativo)
-La herramienta fue diseñada con un enfoque en la usabilidad y la eficiencia (UX/UI), permitiendo a operadores no técnicos realizar envíos masivos en pocos clics:
+## 2. ¿Cómo Funciona?
 
-1. **Configuración de Plantilla:** A través de una interfaz gráfica moderna, el administrador ingresa sus credenciales de correo (mediante un token de seguridad de aplicación, protegiendo su contraseña real) y define la plantilla del asunto y cuerpo del correo.
-2. **Carga de Datos:** El usuario carga un archivo Excel/CSV estandarizado que contiene los correos electrónicos, el nombre del documento PDF a enviar, y la cédula del destinatario.
-3. **Procesamiento Masivo Automatizado:** Al presionar "Iniciar", el sistema procesa miles de registros de forma secuencial. La interfaz muestra una barra de progreso en tiempo real.
-4. **Sistema de Reintentos Inteligentes:** Si ocurre un error local (ej. se olvidó colocar un PDF en la carpeta), el sistema no se detiene. Al final, genera un reporte detallado. El administrador puede simplemente agregar el archivo faltante y presionar **"Reintentar Fallidos"**. El sistema detecta y procesa *únicamente* esos registros pendientes, evitando enviar correos duplicados (Spam) a los clientes que ya recibieron su documento.
+El flujo operativo ha sido diseñado para completarse en **menos de 5 minutos**, sin importar el volumen de documentos:
 
----
+| Paso | Acción | Tiempo Estimado |
+|------|--------|-----------------|
+| **1** | El administrador configura sus credenciales de correo y selecciona su proveedor (Gmail, Outlook, Yahoo, etc.) desde un menú desplegable. | Una sola vez |
+| **2** | Carga un archivo Excel/CSV con los datos de los destinatarios (correo, cédula, nombre del archivo PDF). | 30 segundos |
+| **3** | Selecciona la carpeta donde están los archivos PDF. | 10 segundos |
+| **4** | Presiona **"Iniciar Proceso"**. El sistema cifra, envía y limpia automáticamente. | Automático |
 
-### 3. Tecnologías Utilizadas
-Para garantizar el rendimiento, la compatibilidad y la seguridad del sistema, se ha desarrollado utilizando una pila tecnológica (Tech Stack) moderna y robusta:
-
-* **Lenguaje Base:** Python 3.10+ (Escogido por su excelente rendimiento en manipulación de datos y cifrado).
-* **Interfaz Gráfica:** `CustomTkinter` (Framework de renderizado moderno para una experiencia visual limpia, fluida y escalable).
-* **Cifrado y Manipulación PDF:** `Pikepdf` (Librería basada en QPDF, estándar de la industria, que permite inyectar algoritmos criptográficos directamente en la estructura de los PDF).
-* **Protocolo de Transmisión:** Librerías nativas SMTP/TLS de Python para conexión directa y segura con servidores de correo institucionales (como Google Workspace/Gmail).
-* **Despliegue:** `PyInstaller` (Empaquetamiento del código en un único binario ejecutable `.exe` para Windows, sin necesidad de que el cliente instale dependencias de programación).
+### Gestión Inteligente de Errores
+Si un archivo falta o un correo rebota, el sistema **no se detiene**. Al finalizar genera un reporte visual con los envíos fallidos y ofrece un botón de **"Reintentar Fallidos"** que procesa únicamente los pendientes, sin duplicar correos ya enviados.
 
 ---
 
-### 4. Arquitectura de Seguridad (Protección de la Información)
-El mayor valor de la herramienta es su blindaje de seguridad, diseñado bajo el principio de "Zero-Knowledge" (Cero Conocimiento) y "Privacy by Design" (Privacidad desde el Diseño). Así protegemos los archivos desde su origen hasta la pantalla del cliente:
+## 3. Capas de Seguridad
 
-#### A. Procesamiento Local (Air-Gapped Logic)
-A diferencia de servicios web de envío masivo (como Mailchimp o plataformas de facturación) que requieren subir todos los PDFs de los clientes a la nube de un tercero, **esta aplicación funciona de manera 100% local**. Los archivos crudos jamás abandonan la computadora del emisor. El cifrado ocurre en la memoria local y solo sale de la computadora cuando ya está fuertemente encriptado.
+SEMS Pro implementa un modelo de seguridad de **5 capas** diseñado bajo los principios de *"Privacy by Design"* (Privacidad desde el Diseño):
 
-#### B. Cifrado de Grado Militar (AES-256)
-Durante la fase de procesamiento, cada PDF individual es reescrito utilizando el algoritmo de cifrado **AES-256** (Advanced Encryption Standard a 256 bits), el estándar de encriptación avalado por el gobierno de EE. UU. para datos "Top Secret" y soportado por la especificación PDF 2.0. Un archivo cifrado con AES-256 es matemáticamente imposible de vulnerar mediante ataques de fuerza bruta en un tiempo de vida humano.
+### 🔒 Capa 1 — Procesamiento 100% Local
+Los documentos **nunca se suben a la nube** ni pasan por servidores de terceros. Todo el cifrado y la preparación ocurren dentro de la computadora del emisor. Esto elimina la exposición a hackeos de plataformas externas.
 
-#### C. Llave Dinámica y Única (Protección contra Intercepción)
-La contraseña asignada a cada PDF no es genérica ni predecible por atacantes; el sistema utiliza dinámicamente la **Cédula de Identidad** de cada cliente como llave de apertura. 
-* **Riesgo Mitigado:** Si, por un error de digitación en la base de datos, un PDF confidencial se envía al correo electrónico de una persona equivocada, o si el correo es interceptado por un hacker, **el archivo es inútil**. Sin conocer el número de identificación exacto del destinatario original, el documento jamás podrá abrirse.
+### 🔐 Capa 2 — Cifrado Individual AES-256
+Cada documento PDF es cifrado individualmente con el algoritmo **AES-256** (Advanced Encryption Standard a 256 bits), el mismo estándar utilizado por el gobierno de los Estados Unidos para proteger información clasificada como "Top Secret". Un archivo protegido con AES-256 es **matemáticamente imposible de vulnerar** mediante fuerza bruta.
 
-#### D. Transmisión Segura (TLS / En tránsito)
-Una vez el archivo es cifrado y atado al correo del destinatario, el sistema negocia una conexión TLS (Transport Layer Security) con el servidor de correo. Esto crea un "túnel" seguro en internet, impidiendo que intermediarios (como proveedores de internet) puedan leer los correos mientras viajan desde la computadora hacia la bandeja de entrada.
+### 🔑 Capa 3 — Contraseña Única por Destinatario
+La contraseña de cada PDF es la **cédula de identidad** del destinatario. Esto significa que:
+- Si un correo llega a la persona equivocada por error de digitación, **no podrá abrir el archivo**.
+- Si un hacker intercepta el correo, el PDF es completamente **inútil** sin conocer el número de identificación.
 
-#### E. Destrucción Segura de Archivos Temporales
-Durante el proceso, el sistema crea versiones cifradas temporales de los PDFs para adjuntarlas al correo. Inmediatamente después de recibir la confirmación de entrega por parte del servidor SMTP, el sistema ejecuta una subrutina de "Secure Cleanup" que elimina y sobreescribe de la memoria física estos archivos temporales, no dejando rastros ni basura digital vulnerable en la computadora.
+### 🌐 Capa 4 — Canal de Transmisión Cifrado (TLS)
+La conexión entre el software y el servidor de correo se establece a través de un **túnel TLS** (Transport Layer Security), impidiendo que cualquier intermediario (proveedores de internet, redes Wi-Fi públicas) pueda leer los correos en tránsito.
+
+### 🧹 Capa 5 — Destrucción Segura de Archivos Temporales
+Una vez enviado cada correo, el sistema **sobrescribe los archivos temporales con datos aleatorios** antes de eliminarlos del disco. Esta técnica anti-forense garantiza que no queden rastros recuperables de los documentos procesados.
 
 ---
 
-### 5. Transparencia y Auditoría Técnica
-Para garantizar la total transparencia sobre el manejo de los datos y certificar las arquitecturas de seguridad mencionadas, el código fuente completo de esta solución está disponible para auditoría.
+## 4. Almacenamiento Seguro de Credenciales
 
-El equipo técnico o de seguridad informática de la empresa puede revisar el repositorio oficial en el siguiente enlace:
-🔗 **[Repositorio de Código - Sistema de Envío Masivo Seguro](https://github.com/johnrpo-dev/emailMasivos)**
+Las contraseñas de correo electrónico del administrador **no se guardan en archivos de texto** ni en bases de datos locales. SEMS Pro utiliza el **Administrador de Credenciales de Windows** (Windows Credential Manager), la misma bóveda de seguridad que utiliza el sistema operativo para proteger las contraseñas de inicio de sesión.
+
+---
+
+## 5. Compatibilidad
+
+| Característica | Detalle |
+|---|---|
+| **Sistema Operativo** | Windows 10 / 11 (64 bits) |
+| **Proveedores de Correo** | Gmail, Outlook/Hotmail, Yahoo, Zoho, iCloud |
+| **Instalación** | No requiere instalación. Ejecutable portátil (.exe) |
+| **Dependencias** | Ninguna. El software es autocontenido |
+| **Volumen** | Sin límite técnico de envíos por sesión |
+
+---
+
+## 6. Tecnologías Certificadas
+
+SEMS Pro ha sido desarrollado utilizando tecnologías de grado industrial:
+
+| Componente | Tecnología | Propósito |
+|---|---|---|
+| Motor de Cifrado | **AES-256 (PDF 2.0 / R6)** | Protección de documentos |
+| Transporte Seguro | **TLS 1.2+** | Cifrado del canal de comunicación |
+| Almacén de Credenciales | **Windows Credential Manager** | Protección de contraseñas del sistema |
+| Protección de Logs | **Ofuscación PII** | Cumplimiento de Habeas Data en registros internos |
+| Limpieza de Datos | **Overwrite + Delete** | Destrucción anti-forense de archivos temporales |
+
+---
+
+## 7. Cumplimiento Normativo
+
+| Normativa | Cumplimiento |
+|---|---|
+| **Ley 1581 de 2012** (Habeas Data - Colombia) | ✅ Datos personales cifrados y protegidos |
+| **Ley 1273 de 2009** (Delitos Informáticos - Colombia) | ✅ Medidas técnicas de protección implementadas |
+| **Principio de Minimización de Datos** | ✅ Los logs internos enmascaran correos electrónicos |
+| **OWASP Top 10** | ✅ Validación de entrada, gestión segura de secretos |
+
+---
+
+## 8. Soporte Técnico y Actualizaciones
+
+| Servicio | Detalle |
+|---|---|
+| **Puesta en Marcha** | Sesión de configuración y transferencia de conocimiento (25 min) |
+| **Soporte** | Asistencia técnica remota para resolución de incidentes |
+| **Actualizaciones** | Parches de seguridad y mejoras funcionales según plan contratado |
+| **Auditoría** | Código fuente disponible para revisión por el equipo de seguridad informática del cliente, bajo acuerdo de confidencialidad (NDA) |
+
+---
+
+## 9. Contacto
+
+**Desarrollado por:** John R.  
+**Correo:** johnsod8729@gmail.com  
+**Repositorio Técnico (bajo NDA):** Disponible previa solicitud.
+
+---
+
+*Documento confidencial. Prohibida su reproducción total o parcial sin autorización expresa.*
