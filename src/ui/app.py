@@ -14,7 +14,7 @@ class App(ctk.CTk):
         super().__init__()
 
         self.title("SEMS Pro - Envíos Masivos")
-        self.geometry("850x650")
+        self.geometry("850x750")
         self.resizable(False, False)
         
         # Tema Global Premium
