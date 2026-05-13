@@ -13,9 +13,13 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Sistema de Envío Masivo Seguro")
-        self.geometry("750x650")
+        self.title("SEMS Pro - Envíos Masivos")
+        self.geometry("850x650")
         self.resizable(False, False)
+        
+        # Tema Global Premium
+        ctk.set_appearance_mode("dark")
+        ctk.set_default_color_theme("blue")
         
         # Variables de estado (Envío)
         default_pdf_dir = os.path.join(os.getcwd(), "data", "input")
@@ -45,79 +49,118 @@ class App(ctk.CTk):
         self.initial_body = config.get("email_body", "")
 
     def setup_ui(self):
-        # Header global
-        header_frame = ctk.CTkFrame(self, fg_color="transparent")
-        header_frame.pack(pady=(20, 10), fill="x")
-        lbl_title = ctk.CTkLabel(header_frame, text="Envío de PDFs Cifrados", font=self.font_title)
-        lbl_title.pack()
+        # Configurar grid principal (Sidebar + Content)
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(1, weight=1)
+        
+        # === SIDEBAR ===
+        self.sidebar_frame = ctk.CTkFrame(self, width=220, corner_radius=0, fg_color=("gray90", "gray13"))
+        self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
+        self.sidebar_frame.grid_rowconfigure(4, weight=1) # Empujar hacia arriba
+        
+        lbl_logo = ctk.CTkLabel(self.sidebar_frame, text="SEMS Pro", font=ctk.CTkFont(size=28, weight="bold"))
+        lbl_logo.grid(row=0, column=0, padx=20, pady=(30, 40))
+        
+        self.btn_nav_home = ctk.CTkButton(self.sidebar_frame, text="🚀 Envío Masivo", font=self.font_label, fg_color="transparent", text_color=("gray10", "gray90"), hover_color=("gray70", "gray30"), anchor="w", command=self.show_home)
+        self.btn_nav_home.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
+        
+        self.btn_nav_config = ctk.CTkButton(self.sidebar_frame, text="⚙️ Configuración", font=self.font_label, fg_color="transparent", text_color=("gray10", "gray90"), hover_color=("gray70", "gray30"), anchor="w", command=self.show_config)
+        self.btn_nav_config.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
+        
+        # === CONTENIDO PRINCIPAL ===
+        self.main_container = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
+        self.main_container.grid(row=0, column=1, sticky="nsew", padx=30, pady=30)
+        self.main_container.grid_rowconfigure(0, weight=1)
+        self.main_container.grid_columnconfigure(0, weight=1)
+        
+        # Crear frames de las vistas
+        self.home_frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        self.config_frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        
+        self.setup_home_view()
+        self.setup_config_view()
+        
+        # Iniciar en Home
+        self.show_home()
 
-        # Tabview principal
-        self.tabview = ctk.CTkTabview(self, width=650, height=500, corner_radius=15)
-        self.tabview.pack(padx=20, pady=10, fill="both", expand=True)
+    def show_home(self):
+        self.config_frame.grid_forget()
+        self.home_frame.grid(row=0, column=0, sticky="nsew")
+        self.btn_nav_home.configure(fg_color=("gray75", "gray25"))
+        self.btn_nav_config.configure(fg_color="transparent")
+
+    def show_config(self):
+        self.home_frame.grid_forget()
+        self.config_frame.grid(row=0, column=0, sticky="nsew")
+        self.btn_nav_config.configure(fg_color=("gray75", "gray25"))
+        self.btn_nav_home.configure(fg_color="transparent")
         
-        self.tab_envio = self.tabview.add("Envío Masivo")
-        self.tab_config = self.tabview.add("Configuración")
+    def setup_home_view(self):
+        # Header
+        lbl_title = ctk.CTkLabel(self.home_frame, text="Panel de Control", font=self.font_title)
+        lbl_title.pack(anchor="w", pady=(0, 20))
         
-        self.setup_envio_tab()
-        self.setup_config_tab()
+        # Card 1: Archivos (Gris más claro para contrastar)
+        card_archivos = ctk.CTkFrame(self.home_frame, corner_radius=15, fg_color=("gray85", "gray17"))
+        card_archivos.pack(fill="x", pady=(0, 20), ipady=10)
+        card_archivos.grid_columnconfigure(1, weight=1)
         
-    def setup_envio_tab(self):
-        card_frame = ctk.CTkFrame(self.tab_envio, fg_color="transparent")
-        card_frame.pack(pady=10, padx=20, fill="x")
-        card_frame.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(card_archivos, text="📂 Archivo de Datos (CSV):", font=self.font_label).grid(row=0, column=0, padx=20, pady=(25,10), sticky="w")
+        ctk.CTkEntry(card_archivos, textvariable=self.csv_path, font=self.font_text, height=35).grid(row=0, column=1, padx=(0, 10), pady=(25,10), sticky="ew")
+        ctk.CTkButton(card_archivos, text="Examinar", font=self.font_text, width=100, height=35, fg_color="#3b82f6", hover_color="#2563eb", command=self.browse_csv).grid(row=0, column=2, padx=20, pady=(25,10))
         
-        # Archivos
-        ctk.CTkLabel(card_frame, text="Archivo CSV:", font=self.font_label).grid(row=0, column=0, padx=10, pady=20, sticky="w")
-        ctk.CTkEntry(card_frame, textvariable=self.csv_path, font=self.font_text, height=35).grid(row=0, column=1, padx=10, pady=20, sticky="ew")
-        ctk.CTkButton(card_frame, text="Examinar", font=self.font_text, width=100, height=35, command=self.browse_csv).grid(row=0, column=2, padx=10, pady=20)
+        ctk.CTkLabel(card_archivos, text="📄 Directorio de PDFs:", font=self.font_label).grid(row=1, column=0, padx=20, pady=(10,25), sticky="w")
+        ctk.CTkEntry(card_archivos, textvariable=self.pdf_dir, font=self.font_text, height=35).grid(row=1, column=1, padx=(0, 10), pady=(10,25), sticky="ew")
+        ctk.CTkButton(card_archivos, text="Examinar", font=self.font_text, width=100, height=35, fg_color="#3b82f6", hover_color="#2563eb", command=self.browse_pdf_dir).grid(row=1, column=2, padx=20, pady=(10,25))
         
-        ctk.CTkLabel(card_frame, text="Carpeta PDFs:", font=self.font_label).grid(row=1, column=0, padx=10, pady=10, sticky="w")
-        ctk.CTkEntry(card_frame, textvariable=self.pdf_dir, font=self.font_text, height=35).grid(row=1, column=1, padx=10, pady=10, sticky="ew")
-        ctk.CTkButton(card_frame, text="Examinar", font=self.font_text, width=100, height=35, command=self.browse_pdf_dir).grid(row=1, column=2, padx=10, pady=10)
+        # Card 2: Status
+        card_status = ctk.CTkFrame(self.home_frame, corner_radius=15, fg_color=("gray85", "gray17"))
+        card_status.pack(fill="x", pady=(0, 20), ipady=10)
         
-        # Progreso
-        progress_frame = ctk.CTkFrame(self.tab_envio, fg_color="transparent")
-        progress_frame.pack(pady=20, fill="x", padx=30)
-        self.progress_bar = ctk.CTkProgressBar(progress_frame, height=12, progress_color="#10b981")
-        self.progress_bar.pack(fill="x", pady=10)
+        self.progress_bar = ctk.CTkProgressBar(card_status, height=15, progress_color="#10b981")
+        self.progress_bar.pack(fill="x", padx=30, pady=(25, 10))
         self.progress_bar.set(0)
-        self.lbl_status = ctk.CTkLabel(progress_frame, text="Listo para iniciar...", font=self.font_status, text_color="gray")
-        self.lbl_status.pack()
         
-        # Botón Iniciar
+        self.lbl_status = ctk.CTkLabel(card_status, text="Listo para iniciar...", font=self.font_status, text_color="gray")
+        self.lbl_status.pack(pady=(0, 15))
+        
+        # Botón Iniciar (Destacado)
         self.btn_start = ctk.CTkButton(
-            self.tab_envio, text="INICIAR PROCESO", font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
-            fg_color="#10b981", hover_color="#059669", text_color_disabled="#ffffff", height=50, corner_radius=10, command=self.start_process
+            self.home_frame, text="▶ INICIAR PROCESO", font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
+            fg_color="#10b981", hover_color="#059669", text_color_disabled="#ffffff", height=60, corner_radius=15, command=self.start_process
         )
-        self.btn_start.pack(pady=20, padx=50, fill="x")
+        self.btn_start.pack(pady=10, fill="x")
 
-    def setup_config_tab(self):
-        # Credenciales
-        frame_creds = ctk.CTkFrame(self.tab_config)
-        frame_creds.pack(pady=10, padx=20, fill="x")
-        frame_creds.grid_columnconfigure(1, weight=1)
+    def setup_config_view(self):
+        lbl_title = ctk.CTkLabel(self.config_frame, text="Ajustes de Servidor SMTP", font=self.font_title)
+        lbl_title.pack(anchor="w", pady=(0, 20))
         
-        ctk.CTkLabel(frame_creds, text="Correo Remitente:", font=self.font_label).grid(row=0, column=0, padx=10, pady=15, sticky="w")
-        ctk.CTkEntry(frame_creds, textvariable=self.config_user, font=self.font_text, placeholder_text="ej. ventas@empresa.com").grid(row=0, column=1, padx=10, pady=15, sticky="ew")
+        # Card Credenciales
+        card_creds = ctk.CTkFrame(self.config_frame, corner_radius=15, fg_color=("gray85", "gray17"))
+        card_creds.pack(fill="x", pady=(0, 20), ipady=10)
+        card_creds.grid_columnconfigure(1, weight=1)
         
-        ctk.CTkLabel(frame_creds, text="Código de App:", font=self.font_label).grid(row=1, column=0, padx=10, pady=10, sticky="w")
-        ctk.CTkEntry(frame_creds, textvariable=self.config_pass, show="*", font=self.font_text, placeholder_text="Contraseña de 16 letras").grid(row=1, column=1, padx=10, pady=10, sticky="ew")
+        ctk.CTkLabel(card_creds, text="Correo Remitente:", font=self.font_label).grid(row=0, column=0, padx=20, pady=(25, 15), sticky="w")
+        ctk.CTkEntry(card_creds, textvariable=self.config_user, font=self.font_text, height=35, placeholder_text="ej. ventas@empresa.com").grid(row=0, column=1, padx=20, pady=(25, 15), sticky="ew")
+        
+        ctk.CTkLabel(card_creds, text="Código de App (Google):", font=self.font_label).grid(row=1, column=0, padx=20, pady=(0, 25), sticky="w")
+        ctk.CTkEntry(card_creds, textvariable=self.config_pass, show="*", font=self.font_text, height=35, placeholder_text="Contraseña de 16 caracteres").grid(row=1, column=1, padx=20, pady=(0, 25), sticky="ew")
 
-        # Plantilla
-        frame_tpl = ctk.CTkFrame(self.tab_config)
-        frame_tpl.pack(pady=10, padx=20, fill="both", expand=True)
-        frame_tpl.grid_columnconfigure(1, weight=1)
+        # Card Plantilla
+        card_tpl = ctk.CTkFrame(self.config_frame, corner_radius=15, fg_color=("gray85", "gray17"))
+        card_tpl.pack(fill="both", expand=True, pady=(0, 20))
+        card_tpl.grid_columnconfigure(1, weight=1)
         
-        ctk.CTkLabel(frame_tpl, text="Asunto:", font=self.font_label).grid(row=0, column=0, padx=10, pady=15, sticky="w")
-        ctk.CTkEntry(frame_tpl, textvariable=self.config_subject, font=self.font_text).grid(row=0, column=1, padx=10, pady=15, sticky="ew")
+        ctk.CTkLabel(card_tpl, text="Asunto:", font=self.font_label).grid(row=0, column=0, padx=20, pady=(25, 15), sticky="w")
+        ctk.CTkEntry(card_tpl, textvariable=self.config_subject, font=self.font_text, height=35).grid(row=0, column=1, padx=20, pady=(25, 15), sticky="ew")
         
-        ctk.CTkLabel(frame_tpl, text="Cuerpo:", font=self.font_label).grid(row=1, column=0, padx=10, pady=10, sticky="nw")
-        self.txt_body = ctk.CTkTextbox(frame_tpl, font=self.font_text, height=130)
-        self.txt_body.grid(row=1, column=1, padx=10, pady=10, sticky="nsew")
+        ctk.CTkLabel(card_tpl, text="Cuerpo:", font=self.font_label).grid(row=1, column=0, padx=20, pady=(0, 25), sticky="nw")
+        self.txt_body = ctk.CTkTextbox(card_tpl, font=self.font_text)
+        self.txt_body.grid(row=1, column=1, padx=20, pady=(0, 25), sticky="nsew")
         self.txt_body.insert("0.0", self.initial_body)
         
-        btn_save = ctk.CTkButton(self.tab_config, text="Guardar Configuración", font=self.font_label, height=40, command=self.save_settings)
-        btn_save.pack(pady=10)
+        btn_save = ctk.CTkButton(self.config_frame, text="💾 Guardar Configuración", font=self.font_label, height=50, corner_radius=15, command=self.save_settings)
+        btn_save.pack(pady=0, fill="x")
 
     def browse_csv(self):
         filename = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv")])
