@@ -14,7 +14,7 @@ class App(ctk.CTk):
         super().__init__()
 
         self.title("SEMS Pro - Envíos Masivos")
-        self.geometry("850x750")
+        self.geometry("850x680")
         self.resizable(False, False)
         
         # Tema Global Premium
@@ -29,9 +29,17 @@ class App(ctk.CTk):
         # Variables de Configuración
         self.config_user = ctk.StringVar()
         self.config_pass = ctk.StringVar()
-        self.config_host = ctk.StringVar()
-        self.config_port = ctk.StringVar()
         self.config_subject = ctk.StringVar()
+        
+        # Proveedores SMTP preconfigurados
+        self.smtp_providers = {
+            "Gmail": {"host": "smtp.gmail.com", "port": 587},
+            "Outlook / Hotmail": {"host": "smtp.office365.com", "port": 587},
+            "Yahoo": {"host": "smtp.mail.yahoo.com", "port": 587},
+            "Zoho": {"host": "smtp.zoho.com", "port": 587},
+            "iCloud": {"host": "smtp.mail.me.com", "port": 587},
+        }
+        self.config_provider = ctk.StringVar(value="Gmail")
         
         # Tipografías base
         self.font_title = ctk.CTkFont(family="Segoe UI", size=26, weight="bold")
@@ -47,10 +55,19 @@ class App(ctk.CTk):
         config = ConfigManager.get_config()
         self.config_user.set(config.get("smtp_user", ""))
         self.config_pass.set(config.get("smtp_password", ""))
-        self.config_host.set(config.get("smtp_host", "smtp.gmail.com"))
-        self.config_port.set(str(config.get("smtp_port", 587)))
         self.config_subject.set(config.get("email_subject", ""))
         self.initial_body = config.get("email_body", "")
+        
+        # Detectar proveedor guardado por su host
+        saved_host = config.get("smtp_host", "smtp.gmail.com")
+        matched = False
+        for name, data in self.smtp_providers.items():
+            if data["host"] == saved_host:
+                self.config_provider.set(name)
+                matched = True
+                break
+        if not matched:
+            self.config_provider.set("Gmail")
 
     def setup_ui(self):
         # Configurar grid principal (Sidebar + Content)
@@ -150,11 +167,9 @@ class App(ctk.CTk):
         ctk.CTkLabel(card_creds, text="Código de App:", font=self.font_label).grid(row=1, column=0, padx=20, pady=(0, 10), sticky="w")
         ctk.CTkEntry(card_creds, textvariable=self.config_pass, show="*", font=self.font_text, height=35, placeholder_text="Contraseña de 16 caracteres").grid(row=1, column=1, padx=20, pady=(0, 10), sticky="ew")
         
-        ctk.CTkLabel(card_creds, text="Servidor SMTP:", font=self.font_label).grid(row=2, column=0, padx=20, pady=(0, 10), sticky="w")
-        ctk.CTkEntry(card_creds, textvariable=self.config_host, font=self.font_text, height=35, placeholder_text="smtp.gmail.com").grid(row=2, column=1, padx=20, pady=(0, 10), sticky="ew")
-        
-        ctk.CTkLabel(card_creds, text="Puerto:", font=self.font_label).grid(row=3, column=0, padx=20, pady=(0, 25), sticky="w")
-        ctk.CTkEntry(card_creds, textvariable=self.config_port, font=self.font_text, height=35, width=100, placeholder_text="587").grid(row=3, column=1, padx=20, pady=(0, 25), sticky="w")
+        ctk.CTkLabel(card_creds, text="Proveedor de Correo:", font=self.font_label).grid(row=2, column=0, padx=20, pady=(0, 25), sticky="w")
+        provider_menu = ctk.CTkOptionMenu(card_creds, variable=self.config_provider, values=list(self.smtp_providers.keys()), font=self.font_text, height=35, fg_color="#3b82f6", button_color="#2563eb", button_hover_color="#1d4ed8")
+        provider_menu.grid(row=2, column=1, padx=20, pady=(0, 25), sticky="w")
 
         # Card Plantilla
         card_tpl = ctk.CTkFrame(self.config_frame, corner_radius=15, fg_color=("gray85", "gray17"))
@@ -182,9 +197,10 @@ class App(ctk.CTk):
 
     def save_settings(self):
         body = self.txt_body.get("0.0", "end").strip()
+        provider = self.smtp_providers.get(self.config_provider.get(), {"host": "smtp.gmail.com", "port": 587})
         success = ConfigManager.save_config(
             self.config_user.get(), self.config_pass.get(),
-            self.config_host.get(), self.config_port.get(),
+            provider["host"], str(provider["port"]),
             self.config_subject.get(), body
         )
         if success:
