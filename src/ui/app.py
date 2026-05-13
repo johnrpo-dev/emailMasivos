@@ -340,11 +340,27 @@ class App(ctk.CTk):
             messagebox.showinfo("Copiado", "El reporte ha sido copiado al portapapeles.", parent=modal)
 
         def retry_failed():
-            modal.destroy()
+            # Deshabilitar botones mientras reintenta
+            btn_retry.configure(state="disabled", text="⏳ Reintentando...", fg_color="#4b5563")
+            btn_copy.configure(state="disabled")
+            lbl_title.configure(text="🔄 Reintentando envíos...", text_color="gray")
+            
             self.btn_start.configure(state="disabled", fg_color="#4b5563")
             self.progress_bar.set(0)
             self.lbl_status.configure(text=f"Reintentando {len(records_fallidos)} envíos fallidos...")
-            threading.Thread(target=self.run_workflow, args=(records_fallidos,), daemon=True).start()
+            
+            def run_and_update():
+                self.run_workflow(records_fallidos)
+                # Al terminar, actualizar el modal desde el hilo principal
+                self.after(0, lambda: on_retry_complete())
+            
+            def on_retry_complete():
+                # Verificar si quedaron nuevos errores tras el reintento
+                # Cerramos el modal viejo y dejamos que run_workflow muestre el nuevo (si hay errores)
+                # o el messagebox de éxito
+                modal.destroy()
+            
+            threading.Thread(target=run_and_update, daemon=True).start()
 
         # Botones en la parte inferior
         btn_frame = ctk.CTkFrame(modal, fg_color="transparent")
@@ -356,3 +372,4 @@ class App(ctk.CTk):
         if records_fallidos:
             btn_retry = ctk.CTkButton(btn_frame, text="🔄 Reintentar Fallidos", command=retry_failed, width=160, height=45, corner_radius=10, font=ctk.CTkFont(weight="bold"), fg_color="#f59e0b", hover_color="#d97706", text_color="white")
             btn_retry.pack(side="right", padx=10, expand=True)
+
