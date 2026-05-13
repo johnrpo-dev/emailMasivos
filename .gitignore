@@ -4,9 +4,8 @@ __pycache__/
 dist/
 build/
 *.spec
-config.json
-data/config.json
+**/config.json
 data/output/
 .env
-app.log
+**/app.log
 .pytest_cache/
