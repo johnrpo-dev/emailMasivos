@@ -286,24 +286,32 @@ class App(ctk.CTk):
 
     def show_results_modal(self, errores, total, records_fallidos):
         modal = ctk.CTkToplevel(self)
-        modal.title("Reporte de Errores del Envío")
-        modal.geometry("550x450")
+        modal.title("Reporte de Envíos")
+        modal.geometry("600x520")
         modal.resizable(False, False)
         
-        # Para evitar que el usuario interactúe con la ventana principal mientras está abierto
         modal.transient(self)
         modal.grab_set()
 
-        lbl_title = ctk.CTkLabel(modal, text="Proceso Finalizado con Observaciones", font=self.font_title)
-        lbl_title.pack(pady=(20, 10))
+        lbl_title = ctk.CTkLabel(modal, text="⚠️ Atención Requerida", font=ctk.CTkFont(size=24, weight="bold"), text_color="#f59e0b")
+        lbl_title.pack(pady=(25, 10))
 
         exitosos = total - len(errores)
-        lbl_summary = ctk.CTkLabel(modal, text=f"Total procesados: {total} | Éxitos: {exitosos} | Errores: {len(errores)}", font=self.font_label)
-        lbl_summary.pack(pady=(0, 10))
+        
+        # Tarjeta de Resumen
+        card_summary = ctk.CTkFrame(modal, corner_radius=15, fg_color=("gray85", "gray17"))
+        card_summary.pack(fill="x", padx=30, pady=(10, 20), ipady=10)
+        
+        lbl_total = ctk.CTkLabel(card_summary, text=f"📊 Total: {total}", font=self.font_label)
+        lbl_total.pack(side="left", expand=True)
+        lbl_success = ctk.CTkLabel(card_summary, text=f"✅ Éxitos: {exitosos}", font=self.font_label, text_color="#10b981")
+        lbl_success.pack(side="left", expand=True)
+        lbl_err = ctk.CTkLabel(card_summary, text=f"❌ Errores: {len(errores)}", font=self.font_label, text_color="#ef4444")
+        lbl_err.pack(side="left", expand=True)
 
         # Textbox con los errores
-        txt_errors = ctk.CTkTextbox(modal, width=500, height=250, font=self.font_text)
-        txt_errors.pack(pady=10, padx=20)
+        txt_errors = ctk.CTkTextbox(modal, width=540, height=230, font=self.font_text, corner_radius=10, fg_color=("gray90", "gray13"))
+        txt_errors.pack(pady=10, padx=30)
         
         report_text = "--- REPORTE DE ERRORES ---\n\n"
         report_text += "\n".join(errores)
@@ -325,11 +333,11 @@ class App(ctk.CTk):
 
         # Botones en la parte inferior
         btn_frame = ctk.CTkFrame(modal, fg_color="transparent")
-        btn_frame.pack(pady=(10, 20), fill="x", padx=20)
+        btn_frame.pack(pady=(15, 20), fill="x", padx=30)
         
-        btn_copy = ctk.CTkButton(btn_frame, text="Copiar Reporte", command=copy_to_clipboard, width=150, fg_color="#4b5563", hover_color="#374151")
+        btn_copy = ctk.CTkButton(btn_frame, text="📋 Copiar Reporte", command=copy_to_clipboard, width=160, height=45, corner_radius=10, fg_color="#4b5563", hover_color="#374151")
         btn_copy.pack(side="left", padx=10, expand=True)
 
         if records_fallidos:
-            btn_retry = ctk.CTkButton(btn_frame, text="Reintentar Fallidos", command=retry_failed, width=150, fg_color="#f59e0b", hover_color="#d97706", text_color="white")
+            btn_retry = ctk.CTkButton(btn_frame, text="🔄 Reintentar Fallidos", command=retry_failed, width=160, height=45, corner_radius=10, font=ctk.CTkFont(weight="bold"), fg_color="#f59e0b", hover_color="#d97706", text_color="white")
             btn_retry.pack(side="right", padx=10, expand=True)
