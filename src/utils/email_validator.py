@@ -11,44 +11,61 @@ EMAIL_REGEX = re.compile(
     r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$'
 )
 
-# Dominios comunes y sus typos frecuentes
-DOMAIN_TYPOS = {
+# Nombres de dominio mal escritos -> nombre correcto (sin TLD)
+# Esto permite detectar typos sin importar el TLD (.com, .es, .co, etc.)
+DOMAIN_NAME_TYPOS = {
     # Gmail
-    "gmial.com": "gmail.com",
-    "gmal.com": "gmail.com",
-    "gamil.com": "gmail.com",
-    "gnail.com": "gmail.com",
-    "gmaill.com": "gmail.com",
-    "gmali.com": "gmail.com",
-    "gmail.co": "gmail.com",
-    "gmaul.com": "gmail.com",
-    "gmeil.com": "gmail.com",
-    "gmail.con": "gmail.com",
-    "gmail.om": "gmail.com",
-    "gmail.cm": "gmail.com",
+    "gmial": "gmail",
+    "gmal": "gmail",
+    "gamil": "gmail",
+    "gnail": "gmail",
+    "gmaill": "gmail",
+    "gmali": "gmail",
+    "gmaul": "gmail",
+    "gmeil": "gmail",
+    "gemail": "gmail",
+    "gimail": "gmail",
+    "gmai": "gmail",
     # Hotmail
-    "hotmal.com": "hotmail.com",
-    "hotmial.com": "hotmail.com",
-    "hotamil.com": "hotmail.com",
-    "hotmil.com": "hotmail.com",
-    "hotmail.co": "hotmail.com",
-    "hotmail.con": "hotmail.com",
-    "hotmeil.com": "hotmail.com",
-    "hotmaill.com": "hotmail.com",
+    "hotmal": "hotmail",
+    "hotmial": "hotmail",
+    "hotamil": "hotmail",
+    "hotmil": "hotmail",
+    "hotmeil": "hotmail",
+    "hotmaill": "hotmail",
+    "hotmali": "hotmail",
+    "hotmai": "hotmail",
+    "hotmal": "hotmail",
+    "hotamail": "hotmail",
+    "htomail": "hotmail",
+    "hotmaiil": "hotmail",
     # Outlook
-    "outlok.com": "outlook.com",
-    "outllook.com": "outlook.com",
-    "outlook.co": "outlook.com",
-    "outlook.con": "outlook.com",
-    "outloock.com": "outlook.com",
+    "outlok": "outlook",
+    "outllook": "outlook",
+    "outloock": "outlook",
+    "outlool": "outlook",
+    "outook": "outlook",
+    "outiook": "outlook",
     # Yahoo
-    "yaho.com": "yahoo.com",
-    "yahooo.com": "yahoo.com",
-    "yahoo.co": "yahoo.com",
-    "yahoo.con": "yahoo.com",
-    "yhoo.com": "yahoo.com",
-    "yaoo.com": "yahoo.com",
+    "yaho": "yahoo",
+    "yahooo": "yahoo",
+    "yhoo": "yahoo",
+    "yaoo": "yahoo",
+    "yahho": "yahoo",
+    "yhaoo": "yahoo",
 }
+
+# Dominios conocidos y su TLD correcto
+KNOWN_DOMAINS = {
+    "gmail": "gmail.com",
+    "hotmail": "hotmail.com",
+    "outlook": "outlook.com",
+    "yahoo": "yahoo.com",
+}
+
+# TLDs invalidos comunes (typos de .com)
+INVALID_TLDS = {"con", "cm", "om", "comm", "cmo", "co"}
+
 
 
 class EmailValidationResult:
@@ -82,13 +99,35 @@ def validate_email(email: str) -> EmailValidationResult:
             message=f"Formato de email inválido: '{email}'"
         )
     
-    # Extraer dominio
+    # Extraer dominio y separar nombre de TLD
     domain = email.split("@")[1]
+    parts = domain.rsplit(".", 1)
+    if len(parts) != 2:
+        return EmailValidationResult(
+            email=email, is_valid=False, error_type="formato",
+            message=f"Dominio invalido: '{domain}'"
+        )
+    domain_name, tld = parts[0], parts[1]
     
-    # Nivel 2: Detectar typos comunes en dominios
-    if domain in DOMAIN_TYPOS:
-        suggested_domain = DOMAIN_TYPOS[domain]
-        suggested_email = email.replace(f"@{domain}", f"@{suggested_domain}")
+    # Nivel 2: Detectar typos en el nombre del dominio (sin importar TLD)
+    # Ej: hotmial.es, gmial.co, gamil.com -> todos detectados
+    if domain_name in DOMAIN_NAME_TYPOS:
+        correct_name = DOMAIN_NAME_TYPOS[domain_name]
+        suggested_domain = KNOWN_DOMAINS.get(correct_name, f"{correct_name}.com")
+        suggested_email = email.split("@")[0] + "@" + suggested_domain
+        return EmailValidationResult(
+            email=email,
+            is_valid=False,
+            error_type="typo_dominio",
+            message=f"Posible typo en dominio: '{domain}' -- Quisiste decir '{suggested_domain}'?",
+            suggestion=suggested_email
+        )
+    
+    # Nivel 2b: Nombre correcto pero TLD mal escrito
+    # Ej: gmail.con, hotmail.cm, outlook.om
+    if domain_name in KNOWN_DOMAINS and tld in INVALID_TLDS:
+        suggested_domain = KNOWN_DOMAINS[domain_name]
+        suggested_email = email.split("@")[0] + "@" + suggested_domain
         return EmailValidationResult(
             email=email,
             is_valid=False,
