@@ -55,16 +55,15 @@ DOMAIN_NAME_TYPOS = {
     "yhaoo": "yahoo",
 }
 
-# Dominios conocidos y su TLD correcto
-KNOWN_DOMAINS = {
+# Proveedores conocidos: nombre correcto -> dominio mas comun
+# Se usa para generar la sugerencia de correccion
+KNOWN_PROVIDERS = {
     "gmail": "gmail.com",
     "hotmail": "hotmail.com",
     "outlook": "outlook.com",
     "yahoo": "yahoo.com",
+    "live": "live.com",
 }
-
-# TLDs invalidos comunes (typos de .com)
-INVALID_TLDS = {"con", "cm", "om", "comm", "cmo", "co"}
 
 
 
@@ -99,21 +98,19 @@ def validate_email(email: str) -> EmailValidationResult:
             message=f"Formato de email inválido: '{email}'"
         )
     
-    # Extraer dominio y separar nombre de TLD
+    # Extraer dominio completo y el nombre base del proveedor
     domain = email.split("@")[1]
-    parts = domain.rsplit(".", 1)
-    if len(parts) != 2:
-        return EmailValidationResult(
-            email=email, is_valid=False, error_type="formato",
-            message=f"Dominio invalido: '{domain}'"
-        )
-    domain_name, tld = parts[0], parts[1]
+    # Tomar solo la primera parte antes del primer punto
+    # Ej: "hotmial.es" -> "hotmial", "empresa.com.co" -> "empresa"
+    domain_name = domain.split(".")[0]
     
-    # Nivel 2: Detectar typos en el nombre del dominio (sin importar TLD)
-    # Ej: hotmial.es, gmial.co, gamil.com -> todos detectados
+    # Nivel 2: Solo verificar si el NOMBRE del proveedor esta mal escrito
+    # hotmial.es, hotmial.com, hotmial.co -> todos detectados (nombre incorrecto)
+    # hotmail.es, hotmail.com, hotmail.co -> todos validos (nombre correcto)
+    # empresa.com.co -> transparente (no es proveedor conocido)
     if domain_name in DOMAIN_NAME_TYPOS:
         correct_name = DOMAIN_NAME_TYPOS[domain_name]
-        suggested_domain = KNOWN_DOMAINS.get(correct_name, f"{correct_name}.com")
+        suggested_domain = KNOWN_PROVIDERS.get(correct_name, f"{correct_name}.com")
         suggested_email = email.split("@")[0] + "@" + suggested_domain
         return EmailValidationResult(
             email=email,
@@ -122,27 +119,19 @@ def validate_email(email: str) -> EmailValidationResult:
             message=f"Posible typo en dominio: '{domain}' -- Quisiste decir '{suggested_domain}'?",
             suggestion=suggested_email
         )
+    # Si el nombre del proveedor esta bien escrito (gmail, hotmail, etc.),
+    # es valido sin importar el TLD (.com, .es, .co, etc.)
+    if domain_name in KNOWN_PROVIDERS:
+        return EmailValidationResult(email=email, is_valid=True)
     
-    # Nivel 2b: Nombre correcto pero TLD mal escrito
-    # Ej: gmail.con, hotmail.cm, outlook.om
-    if domain_name in KNOWN_DOMAINS and tld in INVALID_TLDS:
-        suggested_domain = KNOWN_DOMAINS[domain_name]
-        suggested_email = email.split("@")[0] + "@" + suggested_domain
-        return EmailValidationResult(
-            email=email,
-            is_valid=False,
-            error_type="typo_dominio",
-            message=f"Posible typo en dominio: '{domain}' -- Quisiste decir '{suggested_domain}'?",
-            suggestion=suggested_email
-        )
-    
-    # Nivel 3: Verificar que el dominio tenga servidores de correo (MX/A record)
+    # Nivel 3: Para dominios desconocidos/corporativos, verificar DNS
+    # Ej: empresa.com.co -> verificar que exista
     if not _domain_has_mail_server(domain):
         return EmailValidationResult(
             email=email,
             is_valid=False,
             error_type="dominio_inexistente",
-            message=f"El dominio '{domain}' no tiene servidores de correo válidos"
+            message=f"El dominio '{domain}' no tiene servidores de correo validos"
         )
     
     return EmailValidationResult(email=email, is_valid=True)
