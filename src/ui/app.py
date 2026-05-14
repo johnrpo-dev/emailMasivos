@@ -358,6 +358,16 @@ class App(ctk.CTk):
         
         modal.transient(self)
         modal.grab_set()
+        
+        # Evitar TclError al cerrar el modal con la X mientras un widget tiene foco
+        def safe_close_modal():
+            try:
+                self.focus_set()
+                modal.destroy()
+            except Exception:
+                pass
+        
+        modal.protocol("WM_DELETE_WINDOW", safe_close_modal)
 
         lbl_title = ctk.CTkLabel(modal, text="Atencion Requerida", font=ctk.CTkFont(size=24, weight="bold"), text_color="#f59e0b")
         lbl_title.pack(pady=(25, 10))
@@ -437,7 +447,7 @@ class App(ctk.CTk):
             
             def run_corrected():
                 self.run_workflow(all_records_to_retry)
-                self.after(0, lambda: modal.destroy())
+                self.after(0, lambda: safe_close_modal())
             
             threading.Thread(target=run_corrected, daemon=True).start()
 
@@ -462,7 +472,7 @@ class App(ctk.CTk):
                 # Verificar si quedaron nuevos errores tras el reintento
                 # Cerramos el modal viejo y dejamos que run_workflow muestre el nuevo (si hay errores)
                 # o el messagebox de éxito
-                modal.destroy()
+                safe_close_modal()
             
             threading.Thread(target=run_and_update, daemon=True).start()
 
