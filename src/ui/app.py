@@ -8,6 +8,7 @@ from src.core.pdf_crypto import PDFCrypto
 from src.core.email_service import EmailService
 from src.config.config_manager import ConfigManager
 from src.utils.logger import logger, mask_email
+from src.utils.email_validator import validate_email
 
 class App(ctk.CTk):
     def __init__(self):
@@ -244,13 +245,41 @@ class App(ctk.CTk):
             
             errores = []
             records_fallidos = []
+            email_corrections = {}  # {email_original: email_corregido}
             
+            # === FASE 1: Validación de emails antes de conectar al SMTP ===
+            self.after(0, self.update_ui_status, "Validando correos electrónicos...")
+            records_validos = []
+            for i, record in enumerate(records):
+                email = str(record.get("email", "")).strip()
+                if not email:
+                    continue
+                validation = validate_email(email)
+                if not validation.is_valid:
+                    msg = f"{email}: {validation.message}"
+                    if validation.suggestion:
+                        msg += f" (Sugerencia: {validation.suggestion})"
+                        email_corrections[email] = validation.suggestion
+                    errores.append(msg)
+                    records_fallidos.append(record)
+                    logger.warning(f"Email rechazado pre-envio: {validation.message}")
+                else:
+                    records_validos.append(record)
+            
+            # Si todos los emails son inválidos, no conectar al SMTP
+            if not records_validos:
+                self.after(0, self.update_ui_status, "Validación completada. Sin correos válidos.")
+                if errores:
+                    self.after(0, lambda: self.show_results_modal(errores, total, records_fallidos, email_corrections))
+                return
+            
+            # === FASE 2: Envío de correos válidos ===
             email_service = EmailService()
             self.after(0, self.update_ui_status, "Conectando al servidor SMTP...")
             email_service.connect()
             
             try:
-                for i, record in enumerate(records):
+                for i, record in enumerate(records_validos):
                     email = str(record.get("email", "")).strip()
                     id_archivo = str(record.get("id_archivo", "")).strip()
                     id_servicio = str(record.get("id_servicio", "")).strip()
@@ -274,12 +303,14 @@ class App(ctk.CTk):
                         logger.error(f"Falta el archivo PDF: {input_pdf} (Destino: {mask_email(email)})")
                         errores.append(f"{email}: PDF no encontrado ({id_archivo})")
                         records_fallidos.append(record)
-                        self.after(0, self.update_ui_status, f"Procesando {i+1} de {total}: {email} (Omitido: Sin PDF)", (i + 1) / total)
+                        total_validos = len(records_validos)
+                        self.after(0, self.update_ui_status, f"Procesando {i+1} de {total_validos}: {email} (Omitido: Sin PDF)", (i + 1) / total_validos)
                         continue
                     
                     temp_pdf = os.path.join(self.pdf_dir.get(), f"temp_{id_archivo}")
                     
-                    self.after(0, self.update_ui_status, f"Procesando {i+1} de {total}: {email}")
+                    total_validos = len(records_validos)
+                    self.after(0, self.update_ui_status, f"Procesando {i+1} de {total_validos}: {email}")
                     
                     try:
                         # Encriptación con la clave dinámica y única
@@ -297,14 +328,15 @@ class App(ctk.CTk):
                     finally:
                         PDFCrypto.secure_cleanup(temp_pdf)
                         
-                    self.after(0, self.update_ui_status, f"Procesando {i+1} de {total}: {email}", (i + 1) / total)
+                    total_validos = len(records_validos)
+                    self.after(0, self.update_ui_status, f"Procesando {i+1} de {total_validos}: {email}", (i + 1) / total_validos)
             finally:
                 email_service.disconnect()
                 
             self.after(0, self.update_ui_status, "¡Proceso masivo completado!")
             
             if errores:
-                self.after(0, lambda: self.show_results_modal(errores, total, records_fallidos))
+                self.after(0, lambda: self.show_results_modal(errores, total, records_fallidos, email_corrections))
             else:
                 self.after(0, lambda: messagebox.showinfo("Completado", "El proceso ha finalizado con éxito sin errores."))
             
@@ -315,33 +347,48 @@ class App(ctk.CTk):
         finally:
             self.after(0, lambda: self.btn_start.configure(state="normal", fg_color="#10b981"))
 
-    def show_results_modal(self, errores, total, records_fallidos):
+    def show_results_modal(self, errores, total, records_fallidos, email_corrections=None):
+        if email_corrections is None:
+            email_corrections = {}
+        
         modal = ctk.CTkToplevel(self)
-        modal.title("Reporte de Envíos")
-        modal.geometry("600x520")
+        modal.title("Reporte de Envios")
+        modal.geometry("620x560")
         modal.resizable(False, False)
         
         modal.transient(self)
         modal.grab_set()
 
-        lbl_title = ctk.CTkLabel(modal, text="⚠️ Atención Requerida", font=ctk.CTkFont(size=24, weight="bold"), text_color="#f59e0b")
+        lbl_title = ctk.CTkLabel(modal, text="Atencion Requerida", font=ctk.CTkFont(size=24, weight="bold"), text_color="#f59e0b")
         lbl_title.pack(pady=(25, 10))
 
         exitosos = total - len(errores)
         
         # Tarjeta de Resumen
         card_summary = ctk.CTkFrame(modal, corner_radius=15, fg_color=("gray85", "gray17"))
-        card_summary.pack(fill="x", padx=30, pady=(10, 20), ipady=10)
+        card_summary.pack(fill="x", padx=30, pady=(10, 15), ipady=10)
         
-        lbl_total = ctk.CTkLabel(card_summary, text=f"📊 Total: {total}", font=self.font_label)
+        lbl_total = ctk.CTkLabel(card_summary, text=f"Total: {total}", font=self.font_label)
         lbl_total.pack(side="left", expand=True)
-        lbl_success = ctk.CTkLabel(card_summary, text=f"✅ Éxitos: {exitosos}", font=self.font_label, text_color="#10b981")
+        lbl_success = ctk.CTkLabel(card_summary, text=f"Exitos: {exitosos}", font=self.font_label, text_color="#10b981")
         lbl_success.pack(side="left", expand=True)
-        lbl_err = ctk.CTkLabel(card_summary, text=f"❌ Errores: {len(errores)}", font=self.font_label, text_color="#ef4444")
+        lbl_err = ctk.CTkLabel(card_summary, text=f"Errores: {len(errores)}", font=self.font_label, text_color="#ef4444")
         lbl_err.pack(side="left", expand=True)
 
+        # Si hay correcciones disponibles, mostrar un aviso
+        if email_corrections:
+            card_fix = ctk.CTkFrame(modal, corner_radius=10, fg_color=("#fef3c7", "#422006"))
+            card_fix.pack(fill="x", padx=30, pady=(0, 10), ipady=5)
+            fix_count = len(email_corrections)
+            lbl_fix = ctk.CTkLabel(
+                card_fix, 
+                text=f"Se detectaron {fix_count} correo(s) con errores corregibles automaticamente.",
+                font=self.font_text, text_color=("#92400e", "#fbbf24")
+            )
+            lbl_fix.pack(padx=15, pady=8)
+
         # Textbox con los errores
-        txt_errors = ctk.CTkTextbox(modal, width=540, height=230, font=self.font_text, corner_radius=10, fg_color=("gray90", "gray13"))
+        txt_errors = ctk.CTkTextbox(modal, width=560, height=200, font=self.font_text, corner_radius=10, fg_color=("gray90", "gray13"))
         txt_errors.pack(pady=10, padx=30)
         
         report_text = "--- REPORTE DE ERRORES ---\n\n"
@@ -355,15 +402,56 @@ class App(ctk.CTk):
             self.clipboard_append(report_text)
             messagebox.showinfo("Copiado", "El reporte ha sido copiado al portapapeles.", parent=modal)
 
-        def retry_failed():
-            # Deshabilitar botones mientras reintenta
-            btn_retry.configure(state="disabled", text="⏳ Reintentando...", fg_color="#4b5563")
+        def correct_and_retry():
+            """Aplica las correcciones sugeridas a los emails y reintenta el envio."""
+            corrected_records = []
+            remaining_records = []
+            
+            for record in records_fallidos:
+                email_original = str(record.get("email", "")).strip()
+                if email_original in email_corrections:
+                    # Crear copia del record con email corregido
+                    corrected = dict(record)
+                    corrected["email"] = email_corrections[email_original]
+                    corrected_records.append(corrected)
+                    logger.info(f"Email corregido: {email_original} -> {email_corrections[email_original]}")
+                else:
+                    remaining_records.append(record)
+            
+            if not corrected_records:
+                messagebox.showinfo("Info", "No hay correcciones para aplicar.", parent=modal)
+                return
+            
+            # Deshabilitar botones
+            btn_correct.configure(state="disabled", text="Corrigiendo...", fg_color="#4b5563")
             btn_copy.configure(state="disabled")
-            lbl_title.configure(text="🔄 Reintentando envíos...", text_color="gray")
+            if records_fallidos:
+                btn_retry.configure(state="disabled")
+            lbl_title.configure(text="Aplicando correcciones...", text_color="gray")
+            
+            all_records_to_retry = corrected_records + remaining_records
             
             self.btn_start.configure(state="disabled", fg_color="#4b5563")
             self.progress_bar.set(0)
-            self.lbl_status.configure(text=f"Reintentando {len(records_fallidos)} envíos fallidos...")
+            self.lbl_status.configure(text=f"Reenviando {len(all_records_to_retry)} registro(s)...")
+            
+            def run_corrected():
+                self.run_workflow(all_records_to_retry)
+                self.after(0, lambda: modal.destroy())
+            
+            threading.Thread(target=run_corrected, daemon=True).start()
+
+        def retry_failed():
+            # Deshabilitar botones mientras reintenta
+            btn_retry.configure(state="disabled", text="Reintentando...", fg_color="#4b5563")
+            btn_copy.configure(state="disabled")
+            if email_corrections:
+                btn_correct.configure(state="disabled")
+            lbl_title.configure(text="Reintentando envios...", text_color="gray")
+            
+            self.btn_start.configure(state="disabled", fg_color="#4b5563")
+            self.progress_bar.set(0)
+            self.lbl_status.configure(text=f"Reintentando {len(records_fallidos)} envios fallidos...")
             
             def run_and_update():
                 self.run_workflow(records_fallidos)
@@ -380,12 +468,21 @@ class App(ctk.CTk):
 
         # Botones en la parte inferior
         btn_frame = ctk.CTkFrame(modal, fg_color="transparent")
-        btn_frame.pack(pady=(15, 20), fill="x", padx=30)
+        btn_frame.pack(pady=(15, 10), fill="x", padx=30)
         
-        btn_copy = ctk.CTkButton(btn_frame, text="📋 Copiar Reporte", command=copy_to_clipboard, width=160, height=45, corner_radius=10, fg_color="#4b5563", hover_color="#374151")
-        btn_copy.pack(side="left", padx=10, expand=True)
+        btn_copy = ctk.CTkButton(btn_frame, text="Copiar Reporte", command=copy_to_clipboard, width=140, height=45, corner_radius=10, fg_color="#4b5563", hover_color="#374151")
+        btn_copy.pack(side="left", padx=5, expand=True)
+
+        if email_corrections:
+            btn_correct = ctk.CTkButton(
+                btn_frame, text="Corregir y Reintentar", command=correct_and_retry,
+                width=180, height=45, corner_radius=10,
+                font=ctk.CTkFont(weight="bold"),
+                fg_color="#10b981", hover_color="#059669", text_color="white"
+            )
+            btn_correct.pack(side="left", padx=5, expand=True)
 
         if records_fallidos:
-            btn_retry = ctk.CTkButton(btn_frame, text="🔄 Reintentar Fallidos", command=retry_failed, width=160, height=45, corner_radius=10, font=ctk.CTkFont(weight="bold"), fg_color="#f59e0b", hover_color="#d97706", text_color="white")
-            btn_retry.pack(side="right", padx=10, expand=True)
+            btn_retry = ctk.CTkButton(btn_frame, text="Reintentar Fallidos", command=retry_failed, width=160, height=45, corner_radius=10, font=ctk.CTkFont(weight="bold"), fg_color="#f59e0b", hover_color="#d97706", text_color="white")
+            btn_retry.pack(side="right", padx=5, expand=True)
 
