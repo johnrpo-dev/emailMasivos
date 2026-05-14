@@ -26,6 +26,9 @@ DOMAIN_NAME_TYPOS = {
     "gemail": "gmail",
     "gimail": "gmail",
     "gmai": "gmail",
+    "gamail": "gmail",
+    "gmaio": "gmail",
+    "gmil": "gmail",
     # Hotmail
     "hotmal": "hotmail",
     "hotmial": "hotmail",
@@ -35,10 +38,14 @@ DOMAIN_NAME_TYPOS = {
     "hotmaill": "hotmail",
     "hotmali": "hotmail",
     "hotmai": "hotmail",
-    "hotmal": "hotmail",
     "hotamail": "hotmail",
     "htomail": "hotmail",
     "hotmaiil": "hotmail",
+    "homail": "hotmail",
+    "htmail": "hotmail",
+    "hotail": "hotmail",
+    "hotmall": "hotmail",
+    "hotmaul": "hotmail",
     # Outlook
     "outlok": "outlook",
     "outllook": "outlook",
@@ -46,6 +53,25 @@ DOMAIN_NAME_TYPOS = {
     "outlool": "outlook",
     "outook": "outlook",
     "outiook": "outlook",
+    "outlookk": "outlook",
+    "outloook": "outlook",
+    "outluk": "outlook",
+    "outlouk": "outlook",
+    "oultook": "outlook",
+    "outlokk": "outlook",
+    "oulook": "outlook",
+    "outllok": "outlook",
+    "ouutlook": "outlook",
+    "outlock": "outlook",
+    # Live
+    "lve": "live",
+    "liive": "live",
+    "livee": "live",
+    "ive": "live",
+    "liv": "live",
+    # MSN
+    "msnn": "msn",
+    "mns": "msn",
     # Yahoo
     "yaho": "yahoo",
     "yahooo": "yahoo",
@@ -53,16 +79,49 @@ DOMAIN_NAME_TYPOS = {
     "yaoo": "yahoo",
     "yahho": "yahoo",
     "yhaoo": "yahoo",
+    "yahhoo": "yahoo",
+    "yaboo": "yahoo",
+    "yahho": "yahoo",
+    # Ymail (Yahoo)
+    "ymial": "ymail",
+    "ymall": "ymail",
+    "ymaiil": "ymail",
+    # AOL
+    "aoll": "aol",
+    "aaol": "aol",
+    "aool": "aol",
+    # iCloud
+    "iclould": "icloud",
+    "icoud": "icloud",
+    "iclooud": "icloud",
+    "iclod": "icloud",
+    "icluod": "icloud",
+    # ProtonMail
+    "protonmal": "protonmail",
+    "protonmial": "protonmail",
+    "protonmall": "protonmail",
+    "protonmaill": "protonmail",
+    "protnmail": "protonmail",
+    # Zoho
+    "zho": "zoho",
+    "zooh": "zoho",
+    "zhoo": "zoho",
 }
 
 # Proveedores conocidos: nombre correcto -> dominio mas comun
-# Se usa para generar la sugerencia de correccion
+# Si el nombre coincide exactamente, se considera valido sin importar TLD
 KNOWN_PROVIDERS = {
     "gmail": "gmail.com",
     "hotmail": "hotmail.com",
     "outlook": "outlook.com",
-    "yahoo": "yahoo.com",
     "live": "live.com",
+    "msn": "msn.com",
+    "yahoo": "yahoo.com",
+    "ymail": "ymail.com",
+    "aol": "aol.com",
+    "icloud": "icloud.com",
+    "protonmail": "protonmail.com",
+    "zoho": "zoho.com",
 }
 
 
