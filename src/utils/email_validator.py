@@ -169,7 +169,10 @@ def validate_email(email: str) -> EmailValidationResult:
     # empresa.com.co -> transparente (no es proveedor conocido)
     if domain_name in DOMAIN_NAME_TYPOS:
         correct_name = DOMAIN_NAME_TYPOS[domain_name]
-        suggested_domain = KNOWN_PROVIDERS.get(correct_name, f"{correct_name}.com")
+        # Conservar el TLD original del usuario (solo corregir el nombre)
+        # hotmial.es -> hotmail.es, gmial.com -> gmail.com
+        tld_part = domain[len(domain_name):]  # ".es", ".com", ".co", ".com.co"
+        suggested_domain = correct_name + tld_part
         suggested_email = email.split("@")[0] + "@" + suggested_domain
         return EmailValidationResult(
             email=email,
