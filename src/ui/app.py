@@ -3,17 +3,12 @@ import customtkinter as ctk
 from tkinter import filedialog, messagebox
 import os
 import re
-import tempfile
 import threading
 import subprocess
-from concurrent.futures import ThreadPoolExecutor
 from src.core.data_manager import DataManager
-from src.core.pdf_crypto import PDFCrypto
-from src.core.email_service import EmailService
 from src.config.config_manager import ConfigManager
-from src.utils.logger import logger, mask_email
-from src.utils.email_validator import validate_email
-from src.core.history_manager import HistoryManager
+from src.utils.logger import logger
+from src.core.workflow_orchestrator import WorkflowOrchestrator
 
 
 class App(ctk.CTk):
@@ -24,8 +19,8 @@ class App(ctk.CTk):
         self.geometry("850x680")
         self.resizable(False, False)
         
-        # Inicializar base de datos de historial
-        HistoryManager.initialize_db()
+        # Inicializar historial efímero en memoria RAM (Zero-Footprint)
+        self.session_batches = []
         
         # Tema Global Premium
         ctk.set_appearance_mode("dark")
@@ -374,8 +369,59 @@ class App(ctk.CTk):
         self.progress_bar.set(0)
         self.lbl_status.configure(text="Procesando...")
         
-        threading.Thread(target=self.run_workflow, daemon=True).start()
+        self._execute_workflow()
         
+    def _execute_workflow(self, records_to_process=None):
+        orchestrator = WorkflowOrchestrator()
+        
+        def on_batch_added(batch_record):
+            def _add():
+                batch_record["id"] = len(self.session_batches) + 1
+                self.session_batches.append(batch_record)
+            self.after(0, _add)
+
+        def on_log(text):
+            self.add_console_log(text)
+
+        def on_progress(text, progress=None):
+            self.after(0, lambda: self.update_ui_status(text, progress))
+
+        def on_stats_update(total=None, success=None, failed=None):
+            self.update_monitor_stats(total=total, success=success, failed=failed)
+
+        def on_complete(errores, total, records_fallidos, email_corrections):
+            def _complete():
+                try:
+                    exitosos_total = total - len(errores)
+                    self.update_ui_status("¡Proceso masivo completado!", 1.0)
+                    self.add_console_log(f"✓ COMPLETADO: {exitosos_total} exitosos, {len(errores)} fallidos.")
+                    
+                    if self.state() == "iconic":
+                        self.show_desktop_notification(
+                            "Envío Masivo Terminado",
+                            f"El proceso ha finalizado. Éxitos: {exitosos_total}, Errores: {len(errores)}"
+                        )
+                    
+                    if errores:
+                        self.show_results_modal(errores, total, records_fallidos, email_corrections)
+                    else:
+                        messagebox.showinfo("Completado", "El proceso ha finalizado con éxito sin errores.")
+                finally:
+                    self.btn_start.configure(state="normal", fg_color=("#10b981", "#059669"))
+                    self.btn_preview.configure(state="normal", fg_color=("#3b82f6", "#2563eb"))
+            self.after(0, _complete)
+
+        orchestrator.start(
+            csv_path=self.csv_path.get(),
+            pdf_dir=self.pdf_dir.get(),
+            on_batch_added=on_batch_added,
+            on_log=on_log,
+            on_progress=on_progress,
+            on_stats_update=on_stats_update,
+            on_complete=on_complete,
+            records_to_process=records_to_process
+        )
+
     def update_ui_status(self, text, progress=None):
         self.lbl_status.configure(text=text)
         if progress is not None:
@@ -388,9 +434,10 @@ class App(ctk.CTk):
         Se eliminan caracteres peligrosos y se limita la longitud del texto.
         """
         try:
-            # Seguridad: Eliminar metacaracteres de PowerShell para prevenir command injection
-            safe_title = re.sub(r'[";|&$`(){}\[\]]', '', title)[:100]
-            safe_message = re.sub(r'[";|&$`(){}\[\]]', '', message)[:250]
+            # Seguridad (SEC-002): Lista blanca estricta de caracteres para prevenir command injection en PowerShell.
+            # Se excluyen de forma garantizada comillas simples, dobles, backslashes y caracteres de escape.
+            safe_title = re.sub(r"[^a-zA-Z0-9 .,!#@:_\-]", "", title)[:100]
+            safe_message = re.sub(r"[^a-zA-Z0-9 .,!#@:_\-/]", "", message)[:250]
             
             ps_code = (
                 '[void][System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms");'
@@ -481,312 +528,6 @@ class App(ctk.CTk):
         txt_body.pack(fill="both", expand=True, padx=20, pady=(0, 20))
         txt_body.insert("0.0", body)
         txt_body.configure(state="disabled")
-
-    def run_workflow(self, records_to_process=None):
-        try:
-            if records_to_process is None:
-                records = DataManager.load_csv(self.csv_path.get())
-            else:
-                records = records_to_process
-            
-            total = len(records)
-            self.update_monitor_stats(total=total, success=0, failed=0)
-            self.add_console_log(f"Cargados {total} registros para procesar.")
-            
-            # Registrar lote en historial de SQLite
-            csv_file = self.csv_path.get() if records_to_process is None else f"Reintento: {self.csv_path.get()}"
-            lote_id = HistoryManager.add_lote(total_registros=total, exitosos=0, fallidos=0, csv_nombre=csv_file)
-            
-            # Refrescar config antes de enviar
-            config = ConfigManager.get_config()
-            subject_template = config.get("email_subject", "")
-            
-            errores = []
-            records_fallidos = []
-            email_corrections = {}  # {email_original: email_corregido}
-            
-            # === FASE 1: Validación de emails antes de conectar al SMTP ===
-            self.after(0, self.update_ui_status, "Validando correos electrónicos...")
-            self.add_console_log("Iniciando validación de destinatarios...")
-            records_validos = []
-            valid_failed_count = 0
-            
-            for i, record in enumerate(records):
-                email = str(record.get("email", "")).strip()
-                id_archivo = str(record.get("id_archivo", "")).strip()
-                id_servicio = str(record.get("id_servicio", "")).strip()
-                cedula = str(record.get("cedula", "")).strip()
-                
-                if not email:
-                    valid_failed_count += 1
-                    self.update_monitor_stats(failed=valid_failed_count)
-                    self.add_console_log("⚠ OMITIDO: Fila sin correo electrónico.")
-                    continue
-                    
-                validation = validate_email(email)
-                if not validation.is_valid:
-                    valid_failed_count += 1
-                    self.update_monitor_stats(failed=valid_failed_count)
-                    
-                    msg = f"{email}: {validation.message}"
-                    if validation.suggestion:
-                        msg += f" (Sugerencia: {validation.suggestion})"
-                        email_corrections[email] = validation.suggestion
-                    errores.append(msg)
-                    records_fallidos.append(record)
-                    logger.warning(f"Email rechazado pre-envio: {validation.message}")
-                    self.add_console_log(f"✗ RECHAZADO: {mask_email(email)} ({validation.message})")
-                    
-                    # Registrar validación fallida en base de datos
-                    HistoryManager.add_envio(
-                        lote_id=lote_id,
-                        email=email,
-                        id_archivo=id_archivo,
-                        id_servicio=id_servicio,
-                        cedula=cedula,
-                        estado="error",
-                        detalles=f"Fallo de validación: {validation.message}"
-                    )
-                else:
-                    records_validos.append(record)
-            
-            # Si todos los emails son inválidos, no conectar al SMTP
-            if not records_validos:
-                self.after(0, self.update_ui_status, "Validación completada. Sin correos válidos.")
-                self.add_console_log("✗ PROCESO COMPLETADO: 0 correos válidos procesados.")
-                HistoryManager.update_lote_stats(lote_id=lote_id, exitosos=0, fallidos=len(errores))
-                if errores:
-                    self.after(0, lambda: self.show_results_modal(errores, total, records_fallidos, email_corrections))
-                return
-            
-            # === FASE 2: Envío de correos válidos en Paralelo ===
-            self.after(0, self.update_ui_status, "Iniciando envío masivo en paralelo...")
-            self.add_console_log(f"Iniciando envío masivo para {len(records_validos)} destinatarios válidos...")
-            
-            total_validos = len(records_validos)
-            completed_count = [0]
-            success_count = [0]
-            failed_count = [valid_failed_count]
-            lock = threading.Lock()
-            
-            # Determinar número de hilos de forma balanceada (máximo 4 trabajadores)
-            num_workers = min(4, total_validos)
-            self.add_console_log(f"Distribuyendo carga en {num_workers} hilos de ejecución SMTP...")
-            
-            # Dividir los registros en chunks balanceados
-            chunks = [records_validos[i::num_workers] for i in range(num_workers)]
-            
-            def worker_task(chunk_records, worker_id):
-                email_service = EmailService()
-                try:
-                    email_service.connect()
-                except Exception as e:
-                    logger.error(f"Hilo {worker_id} no pudo conectar a SMTP: {str(e)}")
-                    with lock:
-                        for rec in chunk_records:
-                            err_msg = f"Error de conexión SMTP ({str(e)})"
-                            errores.append(f"{rec.get('email')}: {err_msg}")
-                            records_fallidos.append(rec)
-                            completed_count[0] += 1
-                            failed_count[0] += 1
-                            self.update_monitor_stats(failed=failed_count[0])
-                            self.add_console_log(f"✗ ERROR HILO {worker_id}: {mask_email(rec.get('email'))} (Fallo conexión SMTP)")
-                            
-                            count = completed_count[0]
-                            progress = count / total_validos
-                            self.after(0, self.update_ui_status, f"Procesando {count} de {total_validos}...", progress)
-                            
-                            # Registrar fallo de conexión en base de datos
-                            HistoryManager.add_envio(
-                                lote_id=lote_id,
-                                email=str(rec.get("email", "")).strip(),
-                                id_archivo=str(rec.get("id_archivo", "")).strip(),
-                                id_servicio=str(rec.get("id_servicio", "")).strip(),
-                                cedula=str(rec.get("cedula", "")).strip(),
-                                estado="error",
-                                detalles=err_msg
-                            )
-                    return
-                
-                try:
-                    for record in chunk_records:
-                        email = str(record.get("email", "")).strip()
-                        id_archivo = str(record.get("id_archivo", "")).strip()
-                        id_servicio = str(record.get("id_servicio", "")).strip()
-                        cedula = str(record.get("cedula", "")).strip()
-                        
-                        if not email or not id_archivo or not cedula:
-                            with lock:
-                                completed_count[0] += 1
-                                failed_count[0] += 1
-                                self.update_monitor_stats(failed=failed_count[0])
-                                self.add_console_log("✗ OMITIDO: Faltan datos en el registro (email, id_archivo o cedula).")
-                                count = completed_count[0]
-                                progress = count / total_validos
-                                self.after(0, self.update_ui_status, f"Procesando {count} de {total_validos}...", progress)
-                                
-                                # Registrar omitido por datos incompletos
-                                HistoryManager.add_envio(
-                                    lote_id=lote_id,
-                                    email=email if email else "Desconocido",
-                                    id_archivo=id_archivo if id_archivo else "Desconocido",
-                                    id_servicio=id_servicio,
-                                    cedula=cedula,
-                                    estado="error",
-                                    detalles="Registro omitido: datos faltantes (email, id_archivo o cedula vacíos)"
-                                )
-                            continue
-                        
-                        # Seguridad: Sanitizar id_archivo contra path traversal
-                        id_archivo = os.path.basename(id_archivo)
-                        id_archivo = re.sub(r'[^\w.\-]', '_', id_archivo)  # Solo alfanuméricos, punto, guion
-                        
-                        if not id_archivo.lower().endswith(".pdf"):
-                            id_archivo += ".pdf"
-                        
-                        input_pdf = os.path.join(self.pdf_dir.get(), id_archivo)
-                        
-                        # Seguridad: Validar que la ruta resultante está dentro del directorio esperado
-                        real_input = os.path.realpath(input_pdf)
-                        real_dir = os.path.realpath(self.pdf_dir.get())
-                        if not real_input.startswith(real_dir + os.sep) and real_input != real_dir:
-                            logger.error(f"Intento de path traversal detectado: {id_archivo}")
-                            with lock:
-                                err_msg = f"Ruta de archivo sospechosa rechazada ({id_archivo})"
-                                errores.append(f"{email}: {err_msg}")
-                                records_fallidos.append(record)
-                                completed_count[0] += 1
-                                failed_count[0] += 1
-                                self.update_monitor_stats(failed=failed_count[0])
-                                self.add_console_log(f"✗ SEGURIDAD: Path traversal bloqueado para {mask_email(email)}")
-                                HistoryManager.add_envio(
-                                    lote_id=lote_id, email=email, id_archivo=id_archivo,
-                                    id_servicio=id_servicio, cedula=cedula,
-                                    estado="error", detalles=err_msg
-                                )
-                            continue
-                        
-                        if not os.path.exists(input_pdf):
-                            logger.error(f"Falta el archivo PDF: {os.path.basename(input_pdf)} (Destino: {mask_email(email)})")
-                            with lock:
-                                err_msg = f"PDF no encontrado ({id_archivo})"
-                                errores.append(f"{email}: {err_msg}")
-                                records_fallidos.append(record)
-                                completed_count[0] += 1
-                                failed_count[0] += 1
-                                self.update_monitor_stats(failed=failed_count[0])
-                                self.add_console_log(f"✗ ERROR: PDF no encontrado para {mask_email(email)}")
-                                count = completed_count[0]
-                                progress = count / total_validos
-                                self.after(0, self.update_ui_status, f"Procesando {count} de {total_validos}: {email} (Omitido: Sin PDF)", progress)
-                                
-                                # Registrar en base de datos
-                                HistoryManager.add_envio(
-                                    lote_id=lote_id,
-                                    email=email,
-                                    id_archivo=id_archivo,
-                                    id_servicio=id_servicio,
-                                    cedula=cedula,
-                                    estado="error",
-                                    detalles=err_msg
-                                )
-                            continue
-                        
-                        # Seguridad: Usar tempfile.mkstemp en un directorio temporal seguro del sistema (previene symlink y TOCTOU attacks)
-                        fd, temp_pdf = tempfile.mkstemp(suffix=".pdf", prefix=f"sems_{worker_id}_", dir=tempfile.gettempdir())
-                        os.close(fd)  # Cerrar descriptor, pikepdf abrirá por ruta
-                        
-                        try:
-                            # Encriptación
-                            PDFCrypto.encrypt_pdf(input_pdf, temp_pdf, cedula)
-                            
-                            # Formatear el asunto
-                            subject = subject_template.replace("{id_servicio}", id_servicio)
-                            
-                            # Enviar correo
-                            email_service.send_email_with_attachment(email, subject, temp_pdf, filename_override=id_archivo)
-                            logger.info(f"Éxito: {mask_email(email)}")
-                            
-                            with lock:
-                                success_count[0] += 1
-                                self.update_monitor_stats(success=success_count[0])
-                                self.add_console_log(f"✓ ENVIADO: {mask_email(email)} - PDF Cifrado")
-                                
-                                # Registrar éxito en base de datos
-                                HistoryManager.add_envio(
-                                    lote_id=lote_id,
-                                    email=email,
-                                    id_archivo=id_archivo,
-                                    id_servicio=id_servicio,
-                                    cedula=cedula,
-                                    estado="exito",
-                                    detalles=None
-                                )
-                        except Exception as e:
-                            logger.error(f"Fallo con {mask_email(email)}: {str(e)}")
-                            with lock:
-                                err_msg = str(e)
-                                errores.append(f"{email}: Error ({err_msg})")
-                                records_fallidos.append(record)
-                                failed_count[0] += 1
-                                self.update_monitor_stats(failed=failed_count[0])
-                                self.add_console_log(f"✗ ERROR: {mask_email(email)} - {err_msg}")
-                                
-                                # Registrar error en base de datos
-                                HistoryManager.add_envio(
-                                    lote_id=lote_id,
-                                    email=email,
-                                    id_archivo=id_archivo,
-                                    id_servicio=id_servicio,
-                                    cedula=cedula,
-                                    estado="error",
-                                    detalles=err_msg
-                                )
-                        finally:
-                            # Mover la limpieza de archivos temporales a un hilo asíncrono secundario
-                            if os.path.exists(temp_pdf):
-                                threading.Thread(target=PDFCrypto.secure_cleanup, args=(temp_pdf,), daemon=True).start()
-                        
-                        with lock:
-                            completed_count[0] += 1
-                            count = completed_count[0]
-                            progress = count / total_validos
-                            self.after(0, self.update_ui_status, f"Procesando {count} de {total_validos}: {email}", progress)
-                finally:
-                    email_service.disconnect()
-            
-            # Ejecutar trabajadores en el ThreadPoolExecutor
-            with ThreadPoolExecutor(max_workers=num_workers) as executor:
-                for w_id, chunk in enumerate(chunks):
-                    executor.submit(worker_task, chunk, w_id)
-            
-            # Consolidar totales finales en base de datos
-            exitosos_total = total - len(errores)
-            HistoryManager.update_lote_stats(lote_id=lote_id, exitosos=exitosos_total, fallidos=len(errores))
-            
-            self.after(0, self.update_ui_status, "¡Proceso masivo completado!", 1.0)
-            self.add_console_log(f"✓ COMPLETADO: {exitosos_total} exitosos, {len(errores)} fallidos.")
-            
-            # Lanzar notificación de escritorio si la aplicación está minimizada
-            if self.state() == "iconic":
-                self.show_desktop_notification(
-                    "Envío Masivo Terminado",
-                    f"El proceso ha finalizado. Éxitos: {exitosos_total}, Errores: {len(errores)}"
-                )
-            
-            if errores:
-                self.after(0, lambda: self.show_results_modal(errores, total, records_fallidos, email_corrections))
-            else:
-                self.after(0, lambda: messagebox.showinfo("Completado", "El proceso ha finalizado con éxito sin errores."))
-            
-        except Exception as e:
-            self.after(0, self.update_ui_status, "Error crítico en el proceso.")
-            self.add_console_log(f"✗ ERROR CRÍTICO: {str(e)}")
-            self.after(0, lambda e=e: messagebox.showerror("Error", f"Ocurrió un error: {str(e)}"))
-            
-        finally:
-            self.after(0, lambda: self.btn_start.configure(state="normal", fg_color=("#10b981", "#059669")))
-            self.after(0, lambda: self.btn_preview.configure(state="normal", fg_color=("#3b82f6", "#2563eb")))
 
     def show_results_modal(self, errores, total, records_fallidos, email_corrections=None):
         if email_corrections is None:
@@ -887,11 +628,8 @@ class App(ctk.CTk):
             self.progress_bar.set(0)
             self.lbl_status.configure(text=f"Reenviando {len(all_records_to_retry)} registro(s)...")
             
-            def run_corrected():
-                self.run_workflow(all_records_to_retry)
-                self.after(0, lambda: safe_close_modal())
-            
-            threading.Thread(target=run_corrected, daemon=True).start()
+            self._execute_workflow(all_records_to_retry)
+            safe_close_modal()
 
         def retry_failed():
             # Seguridad: Limitar reintentos para prevenir abuso de SMTP y bloqueo de cuenta
@@ -916,18 +654,8 @@ class App(ctk.CTk):
             self.progress_bar.set(0)
             self.lbl_status.configure(text=f"Reintentando {len(records_fallidos)} envios fallidos... (Intento {self._retry_count}/{self.MAX_RETRIES})")
             
-            def run_and_update():
-                self.run_workflow(records_fallidos)
-                # Al terminar, actualizar el modal desde el hilo principal
-                self.after(0, lambda: on_retry_complete())
-            
-            def on_retry_complete():
-                # Verificar si quedaron nuevos errores tras el reintento
-                # Cerramos el modal viejo y dejamos que run_workflow muestre el nuevo (si hay errores)
-                # o el messagebox de éxito
-                safe_close_modal()
-            
-            threading.Thread(target=run_and_update, daemon=True).start()
+            self._execute_workflow(records_fallidos)
+            safe_close_modal()
 
         # Botones en la parte inferior
         btn_frame = ctk.CTkFrame(modal, fg_color="transparent")
@@ -995,7 +723,7 @@ class App(ctk.CTk):
         
         self.search_query.set("") # Limpiar texto de búsqueda
         
-        lotes = HistoryManager.get_lotes()
+        lotes = list(reversed(self.session_batches))
         if not lotes:
             lbl_empty = ctk.CTkLabel(
                 self.history_content_frame, 
@@ -1007,7 +735,7 @@ class App(ctk.CTk):
             
         lbl_subtitle = ctk.CTkLabel(
             self.history_content_frame, 
-            text="📋 Lotes Recientes de Envíos Masivos", 
+            text="📋 Lotes Recientes de Envíos Masivos (Esta Sesión)", 
             font=ctk.CTkFont(family="Segoe UI", size=15, weight="bold"),
             text_color=("#0f172a", "#f8fafc")
         )
@@ -1077,7 +805,7 @@ class App(ctk.CTk):
         envios_scroll = ctk.CTkScrollableFrame(modal, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
         envios_scroll.pack(fill="both", expand=True, padx=30, pady=10)
         
-        envios = HistoryManager.get_envios_by_lote(lote_id)
+        envios = lote_data.get('envios', [])
         if not envios:
             ctk.CTkLabel(envios_scroll, text="No hay registros individuales para este lote.", font=self.font_status, text_color=("#64748b", "#94a3b8")).pack(pady=40)
         else:
@@ -1116,6 +844,7 @@ class App(ctk.CTk):
 
     def perform_history_search(self):
         """Ejecuta la búsqueda global del historial y despliega las tarjetas con estilo premium."""
+        import hashlib
         query = self.search_query.get().strip()
         if not query:
             self.load_history_batches()
@@ -1125,7 +854,36 @@ class App(ctk.CTk):
         for widget in self.history_content_frame.winfo_children():
             widget.destroy()
             
-        results = HistoryManager.search_envios(query)
+        query_strip = query.strip()
+        query_lower = query_strip.lower()
+        
+        # Calcular hashes para búsqueda exacta segura de PII
+        query_email_hash = hashlib.sha256(query_lower.encode()).hexdigest()
+        query_cedula_hash = hashlib.sha256(query_strip.encode()).hexdigest()
+        
+        results = []
+        for lote in self.session_batches:
+            for ev in lote.get("envios", []):
+                is_match = False
+                
+                # Búsqueda exacta por hash para mantener privacidad sin almacenar texto plano
+                if query_email_hash == ev.get("email_hash"):
+                    is_match = True
+                elif query_cedula_hash == ev.get("cedula_hash"):
+                    is_match = True
+                # Búsqueda por coincidencia parcial para campos no sensibles o enmascarados
+                elif (query_lower in ev.get("email", "").lower() or 
+                      query_lower in ev.get("id_archivo", "").lower() or 
+                      query_lower in ev.get("id_servicio", "").lower() or
+                      query_lower in ev.get("cedula", "").lower()):
+                    is_match = True
+                    
+                if is_match:
+                    res_entry = dict(ev)
+                    res_entry["fecha"] = lote["fecha"]
+                    res_entry["csv_nombre"] = lote["csv_nombre"]
+                    results.append(res_entry)
+        results = list(reversed(results))[:200]
         
         lbl_subtitle = ctk.CTkLabel(
             self.history_content_frame, 
