@@ -1,5 +1,6 @@
 import json
 import os
+import stat
 import keyring
 from src.utils.logger import logger
 
@@ -64,6 +65,12 @@ class ConfigManager:
             # Guardar datos públicos en JSON
             with open(ConfigManager.CONFIG_FILE, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=4, ensure_ascii=False)
+            
+            # Restringir permisos del archivo: solo lectura/escritura para el propietario
+            try:
+                os.chmod(ConfigManager.CONFIG_FILE, stat.S_IRUSR | stat.S_IWUSR)
+            except OSError:
+                logger.warning("No se pudieron restringir los permisos de config.json")
                 
             # Guardar contraseña de forma segura en Windows Credential Manager
             if smtp_user and smtp_password:

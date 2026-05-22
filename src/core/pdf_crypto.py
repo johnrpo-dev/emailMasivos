@@ -14,7 +14,7 @@ class PDFCrypto:
         """
         try:
             if not os.path.exists(input_path):
-                raise FileNotFoundError(f"El archivo PDF no existe: {input_path}")
+                raise FileNotFoundError(f"El archivo PDF no existe: {os.path.basename(input_path)}")
             
             # Owner password aleatoria (el usuario final nunca la ve)
             owner_pw = secrets.token_hex(16)
@@ -28,11 +28,12 @@ class PDFCrypto:
                 )
                 pdf.save(output_path, encryption=enc)
                 
-            logger.info(f"PDF cifrado exitosamente: {output_path}")
+            # Seguridad: No registrar rutas absolutas que puedan contener PII
+            logger.info(f"PDF cifrado exitosamente: {os.path.basename(output_path)}")
             return output_path
             
         except Exception as e:
-            logger.error(f"Error al cifrar el PDF {input_path}: {str(e)}")
+            logger.error(f"Error al cifrar PDF {os.path.basename(input_path)}: {str(e)}")
             raise e
             
     @staticmethod
@@ -46,6 +47,6 @@ class PDFCrypto:
                     f.seek(0)
                     f.write(os.urandom(length))
                 os.remove(file_path)
-                logger.info(f"Archivo temporal eliminado de forma segura: {file_path}")
+                logger.info(f"Archivo temporal eliminado de forma segura: {os.path.basename(file_path)}")
         except Exception as e:
-            logger.warning(f"No se pudo eliminar el archivo temporal {file_path}: {str(e)}")
+            logger.warning(f"No se pudo eliminar el archivo temporal {os.path.basename(file_path)}: {str(e)}")

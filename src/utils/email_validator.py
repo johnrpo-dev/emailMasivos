@@ -4,6 +4,7 @@ Valida formato, dominios con typos comunes, y existencia de servidores MX.
 """
 import re
 import socket
+import threading
 from src.utils.logger import logger
 
 # Regex para validación de formato de email (RFC 5322 simplificado)
@@ -199,26 +200,68 @@ def validate_email(email: str) -> EmailValidationResult:
     return EmailValidationResult(email=email, is_valid=True)
 
 
+def _resolve_domain_with_timeout(domain: str, port: int, timeout: float = 2.0) -> bool:
+    """
+    Intenta resolver el dominio y puerto usando socket.getaddrinfo en un hilo secundario
+    para imponer un timeout estricto, previniendo bloqueos prolongados o indefinidos de DNS.
+    """
+    res_list = []
+    exception_holder = []
+
+    def target():
+        try:
+            res = socket.getaddrinfo(domain, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+            res_list.append(res)
+        except Exception as e:
+            exception_holder.append(e)
+
+    thread = threading.Thread(target=target)
+    thread.daemon = True
+    thread.start()
+    thread.join(timeout)
+
+    if thread.is_alive():
+        logger.warning(f"La resolución DNS para {domain}:{port} excedió el tiempo límite de {timeout}s.")
+        raise TimeoutError("DNS query timed out")
+
+    if exception_holder:
+        raise exception_holder[0]
+
+    return len(res_list) > 0
+
+
 def _domain_has_mail_server(domain: str) -> bool:
     """
     Verifica si un dominio tiene servidores de correo.
-    Usa socket.getaddrinfo como alternativa sin dependencias externas.
-    Intenta resolver el dominio - si no se puede resolver, no es válido.
+    Usa _resolve_domain_with_timeout para evitar bloqueos por DNS lentos o caídos.
     """
+    if not domain or not isinstance(domain, str):
+        return False
+
     try:
-        # Intentar resolver el dominio (verificar que existe)
-        socket.getaddrinfo(domain, 25, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        # Intentar resolver el dominio en el puerto 25 con timeout de 2.0s
+        _resolve_domain_with_timeout(domain, 25, timeout=2.0)
         return True
-    except socket.gaierror:
-        # Si falla puerto 25, intentar con puerto 443 (el dominio podría existir pero no tener puerto 25 abierto)
+    except (socket.gaierror, socket.herror):
+        # Si falla puerto 25 por dominio inexistente, intentar con puerto 443
         try:
-            socket.getaddrinfo(domain, 443, socket.AF_UNSPEC, socket.SOCK_STREAM)
+            _resolve_domain_with_timeout(domain, 443, timeout=2.0)
             return True
-        except socket.gaierror:
+        except (socket.gaierror, socket.herror):
             return False
-    except Exception:
-        # En caso de error de red, asumir válido para no bloquear envíos
-        logger.warning(f"No se pudo verificar el dominio '{domain}' (posible problema de red). Se permitirá el envío.")
+        except (TimeoutError, socket.timeout):
+            logger.warning(f"Resolución de fallback (443) para '{domain}' expiró. Se asume válido para no bloquear envíos.")
+            return True
+        except Exception as e:
+            logger.warning(f"Error inesperado al verificar '{domain}' en puerto 443: {str(e)}. Se permitirá el envío.")
+            return True
+    except (TimeoutError, socket.timeout):
+        # Si expira por completo en puerto 25, asumimos válido para no bloquear al usuario
+        logger.warning(f"La resolución DNS principal para '{domain}' expiró (timeout). Se asumirá válido para no bloquear el proceso.")
+        return True
+    except Exception as e:
+        # En caso de otros errores inesperados, asumir válido
+        logger.warning(f"Error inesperado al verificar el dominio '{domain}': {str(e)}. Se permitirá el envío.")
         return True
 
 

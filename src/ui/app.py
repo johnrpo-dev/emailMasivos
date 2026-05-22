@@ -2,13 +2,19 @@
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 import os
+import re
+import tempfile
 import threading
+import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from src.core.data_manager import DataManager
 from src.core.pdf_crypto import PDFCrypto
 from src.core.email_service import EmailService
 from src.config.config_manager import ConfigManager
 from src.utils.logger import logger, mask_email
 from src.utils.email_validator import validate_email
+from src.core.history_manager import HistoryManager
+
 
 class App(ctk.CTk):
     def __init__(self):
@@ -18,9 +24,16 @@ class App(ctk.CTk):
         self.geometry("850x680")
         self.resizable(False, False)
         
+        # Inicializar base de datos de historial
+        HistoryManager.initialize_db()
+        
         # Tema Global Premium
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
+        
+        # Seguridad: Contador de reintentos para prevenir abuso de SMTP
+        self._retry_count = 0
+        self.MAX_RETRIES = 2
         
         # Variables de estado (Envío)
         default_pdf_dir = os.path.join(os.getcwd(), "data", "input")
@@ -75,117 +88,251 @@ class App(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
         
+        # Color de fondo de la ventana principal
+        self.configure(fg_color=("#f8fafc", "#080c14"))
+        
         # === SIDEBAR ===
-        self.sidebar_frame = ctk.CTkFrame(self, width=220, corner_radius=0, fg_color=("gray90", "gray13"))
+        self.sidebar_frame = ctk.CTkFrame(self, width=230, corner_radius=0, fg_color=("#f1f5f9", "#0d111c"), border_width=0)
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
-        self.sidebar_frame.grid_rowconfigure(4, weight=1) # Empujar hacia arriba
+        self.sidebar_frame.grid_rowconfigure(5, weight=1) # Empujar hacia arriba
         
-        lbl_logo = ctk.CTkLabel(self.sidebar_frame, text="SEMS Pro", font=ctk.CTkFont(size=28, weight="bold"))
-        lbl_logo.grid(row=0, column=0, padx=20, pady=(30, 40))
+        # Logo modernizado y premium
+        lbl_logo = ctk.CTkLabel(
+            self.sidebar_frame, 
+            text="SEMS PRO", 
+            font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold"),
+            text_color=("#4f46e5", "#818cf8")
+        )
+        lbl_logo.grid(row=0, column=0, padx=20, pady=(30, 5))
         
-        self.btn_nav_home = ctk.CTkButton(self.sidebar_frame, text="🚀 Envío Masivo", font=self.font_label, fg_color="transparent", text_color=("gray10", "gray90"), hover_color=("gray70", "gray30"), anchor="w", command=self.show_home)
-        self.btn_nav_home.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
+        lbl_logo_sub = ctk.CTkLabel(
+            self.sidebar_frame, 
+            text="ENVÍOS INTELIGENTES", 
+            font=ctk.CTkFont(family="Segoe UI", size=9, weight="bold"),
+            text_color=("#94a3b8", "#475569")
+        )
+        lbl_logo_sub.grid(row=0, column=0, padx=20, pady=(0, 30))
         
-        self.btn_nav_config = ctk.CTkButton(self.sidebar_frame, text="⚙️ Configuración", font=self.font_label, fg_color="transparent", text_color=("gray10", "gray90"), hover_color=("gray70", "gray30"), anchor="w", command=self.show_config)
-        self.btn_nav_config.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
+        self.btn_nav_home = ctk.CTkButton(
+            self.sidebar_frame, text="🚀 Envío Masivo", font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
+            fg_color="transparent", text_color=("#475569", "#94a3b8"), hover_color=("#cbd5e1", "#1e293b"),
+            anchor="w", height=42, corner_radius=10, border_spacing=10, command=self.show_home
+        )
+        self.btn_nav_home.grid(row=1, column=0, padx=15, pady=6, sticky="ew")
+        
+        self.btn_nav_config = ctk.CTkButton(
+            self.sidebar_frame, text="⚙️ Configuración", font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
+            fg_color="transparent", text_color=("#475569", "#94a3b8"), hover_color=("#cbd5e1", "#1e293b"),
+            anchor="w", height=42, corner_radius=10, border_spacing=10, command=self.show_config
+        )
+        self.btn_nav_config.grid(row=2, column=0, padx=15, pady=6, sticky="ew")
+        
+        self.btn_nav_history = ctk.CTkButton(
+            self.sidebar_frame, text="📜 Historial", font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
+            fg_color="transparent", text_color=("#475569", "#94a3b8"), hover_color=("#cbd5e1", "#1e293b"),
+            anchor="w", height=42, corner_radius=10, border_spacing=10, command=self.show_history
+        )
+        self.btn_nav_history.grid(row=3, column=0, padx=15, pady=6, sticky="ew")
         
         # === CONTENIDO PRINCIPAL ===
         self.main_container = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
-        self.main_container.grid(row=0, column=1, sticky="nsew", padx=30, pady=30)
+        self.main_container.grid(row=0, column=1, sticky="nsew", padx=25, pady=25)
         self.main_container.grid_rowconfigure(0, weight=1)
         self.main_container.grid_columnconfigure(0, weight=1)
         
         # Crear frames de las vistas
         self.home_frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
         self.config_frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        self.history_frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
         
         self.setup_home_view()
         self.setup_config_view()
+        self.setup_history_view()
         
         # Iniciar en Home
         self.show_home()
-
+ 
     def show_home(self):
         self.config_frame.grid_forget()
+        self.history_frame.grid_forget()
         self.home_frame.grid(row=0, column=0, sticky="nsew")
-        self.btn_nav_home.configure(fg_color=("gray75", "gray25"))
-        self.btn_nav_config.configure(fg_color="transparent")
-
+        self.btn_nav_home.configure(fg_color=("#e2e8f0", "#1e293b"), text_color=("#4f46e5", "#818cf8"))
+        self.btn_nav_config.configure(fg_color="transparent", text_color=("#475569", "#94a3b8"))
+        self.btn_nav_history.configure(fg_color="transparent", text_color=("#475569", "#94a3b8"))
+ 
     def show_config(self):
         self.home_frame.grid_forget()
+        self.history_frame.grid_forget()
         self.config_frame.grid(row=0, column=0, sticky="nsew")
-        self.btn_nav_config.configure(fg_color=("gray75", "gray25"))
-        self.btn_nav_home.configure(fg_color="transparent")
+        self.btn_nav_config.configure(fg_color=("#e2e8f0", "#1e293b"), text_color=("#4f46e5", "#818cf8"))
+        self.btn_nav_home.configure(fg_color="transparent", text_color=("#475569", "#94a3b8"))
+        self.btn_nav_history.configure(fg_color="transparent", text_color=("#475569", "#94a3b8"))
+ 
+    def show_history(self):
+        self.home_frame.grid_forget()
+        self.config_frame.grid_forget()
+        self.history_frame.grid(row=0, column=0, sticky="nsew")
+        self.btn_nav_history.configure(fg_color=("#e2e8f0", "#1e293b"), text_color=("#4f46e5", "#818cf8"))
+        self.btn_nav_home.configure(fg_color="transparent", text_color=("#475569", "#94a3b8"))
+        self.btn_nav_config.configure(fg_color="transparent", text_color=("#475569", "#94a3b8"))
+        self.load_history_batches()
         
     def setup_home_view(self):
         # Header
-        lbl_title = ctk.CTkLabel(self.home_frame, text="Panel de Control", font=self.font_title)
-        lbl_title.pack(anchor="w", pady=(0, 20))
+        lbl_title = ctk.CTkLabel(self.home_frame, text="Panel de Control", font=self.font_title, text_color=("#0f172a", "#f8fafc"))
+        lbl_title.pack(anchor="w", pady=(0, 2))
         
-        # Card 1: Archivos (Gris más claro para contrastar)
-        card_archivos = ctk.CTkFrame(self.home_frame, corner_radius=15, fg_color=("gray85", "gray17"))
-        card_archivos.pack(fill="x", pady=(0, 20), ipady=10)
+        lbl_subtitle = ctk.CTkLabel(self.home_frame, text="Configure y ejecute envíos masivos de forma segura e instantánea", font=ctk.CTkFont(family="Segoe UI", size=13), text_color=("#64748b", "#94a3b8"))
+        lbl_subtitle.pack(anchor="w", pady=(0, 20))
+        
+        # Card 1: Archivos (Diseño Slate Premium con bordes)
+        card_archivos = ctk.CTkFrame(self.home_frame, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+        card_archivos.pack(fill="x", pady=(0, 20), ipady=5)
         card_archivos.grid_columnconfigure(1, weight=1)
         
-        ctk.CTkLabel(card_archivos, text="📂 Archivo de Datos (CSV):", font=self.font_label).grid(row=0, column=0, padx=20, pady=(25,10), sticky="w")
-        ctk.CTkEntry(card_archivos, textvariable=self.csv_path, font=self.font_text, height=35).grid(row=0, column=1, padx=(0, 10), pady=(25,10), sticky="ew")
-        ctk.CTkButton(card_archivos, text="Examinar", font=self.font_text, width=100, height=35, fg_color="#3b82f6", hover_color="#2563eb", command=self.browse_csv).grid(row=0, column=2, padx=20, pady=(25,10))
+        ctk.CTkLabel(card_archivos, text="📂 Archivo de Datos (CSV):", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=0, column=0, padx=20, pady=(20,10), sticky="w")
+        ctk.CTkEntry(card_archivos, textvariable=self.csv_path, font=self.font_text, height=36, fg_color=("#f8fafc", "#070a13"), border_color=("#cbd5e1", "#1e293b")).grid(row=0, column=1, padx=(0, 10), pady=(20,10), sticky="ew")
+        ctk.CTkButton(card_archivos, text="Examinar", font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"), width=100, height=36, fg_color=("#4f46e5", "#6366f1"), hover_color=("#4338ca", "#4f46e5"), command=self.browse_csv).grid(row=0, column=2, padx=20, pady=(20,10))
         
-        ctk.CTkLabel(card_archivos, text="📄 Directorio de PDFs:", font=self.font_label).grid(row=1, column=0, padx=20, pady=(10,25), sticky="w")
-        ctk.CTkEntry(card_archivos, textvariable=self.pdf_dir, font=self.font_text, height=35).grid(row=1, column=1, padx=(0, 10), pady=(10,25), sticky="ew")
-        ctk.CTkButton(card_archivos, text="Examinar", font=self.font_text, width=100, height=35, fg_color="#3b82f6", hover_color="#2563eb", command=self.browse_pdf_dir).grid(row=1, column=2, padx=20, pady=(10,25))
+        ctk.CTkLabel(card_archivos, text="📄 Directorio de PDFs:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=1, column=0, padx=20, pady=(10,20), sticky="w")
+        ctk.CTkEntry(card_archivos, textvariable=self.pdf_dir, font=self.font_text, height=36, fg_color=("#f8fafc", "#070a13"), border_color=("#cbd5e1", "#1e293b")).grid(row=1, column=1, padx=(0, 10), pady=(10,20), sticky="ew")
+        ctk.CTkButton(card_archivos, text="Examinar", font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"), width=100, height=36, fg_color=("#4f46e5", "#6366f1"), hover_color=("#4338ca", "#4f46e5"), command=self.browse_pdf_dir).grid(row=1, column=2, padx=20, pady=(10,20))
         
-        # Card 2: Status
-        card_status = ctk.CTkFrame(self.home_frame, corner_radius=15, fg_color=("gray85", "gray17"))
-        card_status.pack(fill="x", pady=(0, 20), ipady=10)
+        # Card 2: Status & Progreso (Fina y elegante)
+        card_status = ctk.CTkFrame(self.home_frame, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+        card_status.pack(fill="x", pady=(0, 20), ipady=5)
         
-        self.progress_bar = ctk.CTkProgressBar(card_status, height=15, progress_color="#10b981")
-        self.progress_bar.pack(fill="x", padx=30, pady=(25, 10))
+        self.progress_bar = ctk.CTkProgressBar(card_status, height=12, progress_color=("#10b981", "#34d399"), fg_color=("#cbd5e1", "#1e293b"))
+        self.progress_bar.pack(fill="x", padx=25, pady=(20, 10))
         self.progress_bar.set(0)
         
-        self.lbl_status = ctk.CTkLabel(card_status, text="Listo para iniciar...", font=self.font_status, text_color="gray")
-        self.lbl_status.pack(pady=(0, 15))
+        self.lbl_status = ctk.CTkLabel(card_status, text="Listo para iniciar...", font=self.font_status, text_color=("#64748b", "#94a3b8"))
+        self.lbl_status.pack(pady=(0, 12))
         
-        # Botón Iniciar (Destacado)
-        self.btn_start = ctk.CTkButton(
-            self.home_frame, text="▶ INICIAR PROCESO", font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"),
-            fg_color="#10b981", hover_color="#059669", text_color_disabled="#ffffff", height=60, corner_radius=15, command=self.start_process
+        # Frame para botones de acción (Iniciar y Vista Previa)
+        btn_frame = ctk.CTkFrame(self.home_frame, fg_color="transparent")
+        btn_frame.pack(pady=(0, 20), fill="x")
+        btn_frame.grid_columnconfigure(0, weight=1)
+        btn_frame.grid_columnconfigure(1, weight=1)
+        
+        # Botón Vista Previa
+        self.btn_preview = ctk.CTkButton(
+            btn_frame, text="🔍 VISTA PREVIA", font=ctk.CTkFont(family="Segoe UI", size=15, weight="bold"),
+            fg_color=("#3b82f6", "#2563eb"), hover_color=("#2563eb", "#1d4ed8"), text_color_disabled="#ffffff", height=48, corner_radius=12,
+            command=self.show_preview
         )
-        self.btn_start.pack(pady=10, fill="x")
+        self.btn_preview.grid(row=0, column=0, padx=(0, 10), sticky="ew")
+        
+        # Botón Iniciar
+        self.btn_start = ctk.CTkButton(
+            btn_frame, text="▶ INICIAR PROCESO", font=ctk.CTkFont(family="Segoe UI", size=15, weight="bold"),
+            fg_color=("#10b981", "#059669"), hover_color=("#059669", "#047857"), text_color_disabled="#ffffff", height=48, corner_radius=12,
+            command=self.start_process
+        )
+        self.btn_start.grid(row=0, column=1, padx=(10, 0), sticky="ew")
+        
+        # === PANEL DE MONITOREO EN TIEMPO REAL (Uso del Espacio Vacío) ===
+        self.card_monitor = ctk.CTkFrame(self.home_frame, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+        self.card_monitor.pack(fill="both", expand=True, pady=(0, 10))
+        
+        # Sub-título del monitor
+        lbl_mon_title = ctk.CTkLabel(self.card_monitor, text="📊 Monitor de Operación en Tiempo Real", font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"), text_color=("#334155", "#cbd5e1"))
+        lbl_mon_title.pack(anchor="w", padx=20, pady=(15, 10))
+        
+        # Grid de Contadores (Total, Exitosos, Fallidos)
+        stats_grid = ctk.CTkFrame(self.card_monitor, fg_color="transparent")
+        stats_grid.pack(fill="x", padx=15, pady=(0, 10))
+        stats_grid.grid_columnconfigure((0, 1, 2), weight=1)
+        
+        # Caja 1: Total
+        box_total = ctk.CTkFrame(stats_grid, corner_radius=10, fg_color=("#f1f5f9", "#070a13"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+        box_total.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
+        ctk.CTkLabel(box_total, text="Total Registros", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color=("#475569", "#94a3b8")).pack(pady=(8, 2))
+        self.lbl_mon_total_val = ctk.CTkLabel(box_total, text="0", font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold"), text_color=("#4f46e5", "#818cf8"))
+        self.lbl_mon_total_val.pack(pady=(0, 8))
+        
+        # Caja 2: Exitosos
+        box_success = ctk.CTkFrame(stats_grid, corner_radius=10, fg_color=("#f1f5f9", "#070a13"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+        box_success.grid(row=0, column=1, padx=5, pady=5, sticky="nsew")
+        ctk.CTkLabel(box_success, text="Enviados", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color=("#475569", "#94a3b8")).pack(pady=(8, 2))
+        self.lbl_mon_success_val = ctk.CTkLabel(box_success, text="0", font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold"), text_color=("#10b981", "#34d399"))
+        self.lbl_mon_success_val.pack(pady=(0, 8))
+        
+        # Caja 3: Fallidos
+        box_failed = ctk.CTkFrame(stats_grid, corner_radius=10, fg_color=("#f1f5f9", "#070a13"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+        box_failed.grid(row=0, column=2, padx=5, pady=5, sticky="nsew")
+        ctk.CTkLabel(box_failed, text="Fallidos", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color=("#475569", "#94a3b8")).pack(pady=(8, 2))
+        self.lbl_mon_failed_val = ctk.CTkLabel(box_failed, text="0", font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold"), text_color=("#ef4444", "#f87171"))
+        self.lbl_mon_failed_val.pack(pady=(0, 8))
+        
+        # Consola de logs en tiempo real
+        self.txt_console = ctk.CTkTextbox(self.card_monitor, height=80, font=ctk.CTkFont(family="Consolas", size=11), corner_radius=10, fg_color=("#f8fafc", "#070a13"), text_color=("#334155", "#94a3b8"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+        self.txt_console.pack(fill="both", expand=True, padx=20, pady=(0, 15))
+        self.txt_console.insert("0.0", ">>> Sistema listo. Esperando inicio de proceso...\n")
+        self.txt_console.configure(state="disabled")
+
+    def add_console_log(self, text):
+        def _update():
+            try:
+                self.txt_console.configure(state="normal")
+                self.txt_console.insert("end", f">>> {text}\n")
+                self.txt_console.see("end")
+                self.txt_console.configure(state="disabled")
+            except Exception as e:
+                logger.debug(f"Error actualizando consola UI: {e}")
+        self.after(0, _update)
+
+    def update_monitor_stats(self, total=None, success=None, failed=None):
+        def _update():
+            try:
+                if total is not None:
+                    self.lbl_mon_total_val.configure(text=str(total))
+                if success is not None:
+                    self.lbl_mon_success_val.configure(text=str(success))
+                if failed is not None:
+                    self.lbl_mon_failed_val.configure(text=str(failed))
+            except Exception as e:
+                logger.debug(f"Error actualizando monitor UI: {e}")
+        self.after(0, _update)
+
 
     def setup_config_view(self):
-        lbl_title = ctk.CTkLabel(self.config_frame, text="Ajustes de Servidor SMTP", font=self.font_title)
-        lbl_title.pack(anchor="w", pady=(0, 20))
+        lbl_title = ctk.CTkLabel(self.config_frame, text="Ajustes de Servidor SMTP", font=self.font_title, text_color=("#0f172a", "#f8fafc"))
+        lbl_title.pack(anchor="w", pady=(0, 2))
+        
+        lbl_subtitle = ctk.CTkLabel(self.config_frame, text="Configure las credenciales SMTP de su proveedor y la plantilla de correo", font=ctk.CTkFont(family="Segoe UI", size=13), text_color=("#64748b", "#94a3b8"))
+        lbl_subtitle.pack(anchor="w", pady=(0, 20))
         
         # Card Credenciales
-        card_creds = ctk.CTkFrame(self.config_frame, corner_radius=15, fg_color=("gray85", "gray17"))
-        card_creds.pack(fill="x", pady=(0, 20), ipady=10)
+        card_creds = ctk.CTkFrame(self.config_frame, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+        card_creds.pack(fill="x", pady=(0, 20), ipady=5)
         card_creds.grid_columnconfigure(1, weight=1)
         
-        ctk.CTkLabel(card_creds, text="Correo Remitente:", font=self.font_label).grid(row=0, column=0, padx=20, pady=(25, 10), sticky="w")
-        ctk.CTkEntry(card_creds, textvariable=self.config_user, font=self.font_text, height=35, placeholder_text="ej. ventas@empresa.com").grid(row=0, column=1, padx=20, pady=(25, 10), sticky="ew")
+        ctk.CTkLabel(card_creds, text="Correo Remitente:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=0, column=0, padx=20, pady=(20, 10), sticky="w")
+        ctk.CTkEntry(card_creds, textvariable=self.config_user, font=self.font_text, height=36, fg_color=("#f8fafc", "#070a13"), border_color=("#cbd5e1", "#1e293b"), placeholder_text="ej. ventas@empresa.com").grid(row=0, column=1, padx=20, pady=(20, 10), sticky="ew")
         
-        ctk.CTkLabel(card_creds, text="Código de App:", font=self.font_label).grid(row=1, column=0, padx=20, pady=(0, 10), sticky="w")
-        ctk.CTkEntry(card_creds, textvariable=self.config_pass, show="*", font=self.font_text, height=35, placeholder_text="Contraseña de 16 caracteres").grid(row=1, column=1, padx=20, pady=(0, 10), sticky="ew")
+        ctk.CTkLabel(card_creds, text="Código de App:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=1, column=0, padx=20, pady=(0, 10), sticky="w")
+        ctk.CTkEntry(card_creds, textvariable=self.config_pass, show="*", font=self.font_text, height=36, fg_color=("#f8fafc", "#070a13"), border_color=("#cbd5e1", "#1e293b"), placeholder_text="Contraseña de 16 caracteres").grid(row=1, column=1, padx=20, pady=(0, 10), sticky="ew")
         
-        ctk.CTkLabel(card_creds, text="Proveedor de Correo:", font=self.font_label).grid(row=2, column=0, padx=20, pady=(0, 25), sticky="w")
-        provider_menu = ctk.CTkOptionMenu(card_creds, variable=self.config_provider, values=list(self.smtp_providers.keys()), font=self.font_text, height=35, fg_color="#3b82f6", button_color="#2563eb", button_hover_color="#1d4ed8")
-        provider_menu.grid(row=2, column=1, padx=20, pady=(0, 25), sticky="w")
+        ctk.CTkLabel(card_creds, text="Proveedor de Correo:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=2, column=0, padx=20, pady=(0, 20), sticky="w")
+        provider_menu = ctk.CTkOptionMenu(card_creds, variable=self.config_provider, values=list(self.smtp_providers.keys()), font=self.font_text, height=36, fg_color=("#4f46e5", "#6366f1"), button_color=("#4338ca", "#4f46e5"), button_hover_color=("#3730a3", "#4338ca"))
+        provider_menu.grid(row=2, column=1, padx=20, pady=(0, 20), sticky="w")
 
         # Card Plantilla
-        card_tpl = ctk.CTkFrame(self.config_frame, corner_radius=15, fg_color=("gray85", "gray17"))
+        card_tpl = ctk.CTkFrame(self.config_frame, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
         card_tpl.pack(fill="both", expand=True, pady=(0, 20))
         card_tpl.grid_columnconfigure(1, weight=1)
+        card_tpl.grid_rowconfigure(1, weight=1)
         
-        ctk.CTkLabel(card_tpl, text="Asunto:", font=self.font_label).grid(row=0, column=0, padx=20, pady=(25, 15), sticky="w")
-        ctk.CTkEntry(card_tpl, textvariable=self.config_subject, font=self.font_text, height=35).grid(row=0, column=1, padx=20, pady=(25, 15), sticky="ew")
+        ctk.CTkLabel(card_tpl, text="Asunto del Correo:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=0, column=0, padx=20, pady=(20, 10), sticky="w")
+        ctk.CTkEntry(card_tpl, textvariable=self.config_subject, font=self.font_text, height=36, fg_color=("#f8fafc", "#070a13"), border_color=("#cbd5e1", "#1e293b")).grid(row=0, column=1, padx=20, pady=(20, 10), sticky="ew")
         
-        ctk.CTkLabel(card_tpl, text="Cuerpo:", font=self.font_label).grid(row=1, column=0, padx=20, pady=(0, 25), sticky="nw")
-        self.txt_body = ctk.CTkTextbox(card_tpl, font=self.font_text)
-        self.txt_body.grid(row=1, column=1, padx=20, pady=(0, 25), sticky="nsew")
+        ctk.CTkLabel(card_tpl, text="Cuerpo del Correo:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=1, column=0, padx=20, pady=(0, 20), sticky="nw")
+        self.txt_body = ctk.CTkTextbox(card_tpl, font=self.font_text, fg_color=("#f8fafc", "#070a13"), border_color=("#cbd5e1", "#1e293b"), border_width=1, corner_radius=10)
+        self.txt_body.grid(row=1, column=1, padx=20, pady=(0, 20), sticky="nsew")
         self.txt_body.insert("0.0", self.initial_body)
         
-        btn_save = ctk.CTkButton(self.config_frame, text="💾 Guardar Configuración", font=self.font_label, height=50, corner_radius=15, command=self.save_settings)
+        btn_save = ctk.CTkButton(self.config_frame, text="💾 Guardar Configuración", font=ctk.CTkFont(family="Segoe UI", size=15, weight="bold"), fg_color=("#4f46e5", "#6366f1"), hover_color=("#4338ca", "#4f46e5"), height=48, corner_radius=12, command=self.save_settings)
         btn_save.pack(pady=0, fill="x")
 
     def browse_csv(self):
@@ -210,6 +357,9 @@ class App(ctk.CTk):
             messagebox.showerror("Error", "No se pudo guardar la configuración.")
 
     def start_process(self):
+        # Seguridad: Reiniciar el contador de reintentos al iniciar un nuevo lote de envíos
+        self._retry_count = 0
+        
         if not self.csv_path.get() or not self.pdf_dir.get():
             messagebox.showwarning("Atención", "Selecciona el CSV y la carpeta de PDFs.")
             return
@@ -220,6 +370,7 @@ class App(ctk.CTk):
             return
 
         self.btn_start.configure(state="disabled", fg_color="#4b5563")
+        self.btn_preview.configure(state="disabled", fg_color="#4b5563")
         self.progress_bar.set(0)
         self.lbl_status.configure(text="Procesando...")
         
@@ -230,6 +381,107 @@ class App(ctk.CTk):
         if progress is not None:
             self.progress_bar.set(progress)
 
+    def show_desktop_notification(self, title, message):
+        """Muestra una notificación de escritorio en Windows usando PowerShell nativo.
+        
+        Seguridad: Se sanitizan los parámetros para prevenir inyección de código PowerShell.
+        Se eliminan caracteres peligrosos y se limita la longitud del texto.
+        """
+        try:
+            # Seguridad: Eliminar metacaracteres de PowerShell para prevenir command injection
+            safe_title = re.sub(r'[";|&$`(){}\[\]]', '', title)[:100]
+            safe_message = re.sub(r'[";|&$`(){}\[\]]', '', message)[:250]
+            
+            ps_code = (
+                '[void][System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms");'
+                '$n=New-Object System.Windows.Forms.NotifyIcon;'
+                '$n.Icon=[System.Drawing.SystemIcons]::Information;'
+                '$n.BalloonTipIcon="Info";'
+                f'$n.BalloonTipText="{safe_message}";'
+                f'$n.BalloonTipTitle="{safe_title}";'
+                '$n.Visible=$True;'
+                '$n.ShowBalloonTip(5000)'
+            )
+            subprocess.run(
+                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_code],
+                capture_output=True,
+                text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                timeout=10  # Prevenir hang indefinido
+            )
+        except Exception as e:
+            logger.warning(f"No se pudo mostrar la notificación de Windows: {str(e)}")
+
+    def show_preview(self):
+        if not self.csv_path.get():
+            messagebox.showwarning("Atención", "Selecciona primero el archivo CSV de datos.")
+            return
+            
+        try:
+            records = DataManager.load_csv(self.csv_path.get())
+        except Exception as e:
+            messagebox.showerror("Error", f"No se pudo cargar el CSV: {str(e)}")
+            return
+            
+        if not records:
+            messagebox.showwarning("Atención", "El archivo CSV está vacío.")
+            return
+            
+        # Tomamos el primer registro como prueba
+        record = records[0]
+        email = str(record.get("email", "")).strip()
+        id_archivo = str(record.get("id_archivo", "")).strip()
+        id_servicio = str(record.get("id_servicio", "")).strip()
+        cedula = str(record.get("cedula", "")).strip()
+        
+        # Generar vista de asunto y cuerpo
+        config = ConfigManager.get_config()
+        subject_template = config.get("email_subject", "")
+        body_template = config.get("email_body", "")
+        
+        subject = subject_template.replace("{id_servicio}", id_servicio)
+        body = body_template
+        
+        # Mostrar el modal de vista previa
+        modal = ctk.CTkToplevel(self)
+        modal.title("Vista Previa de Correo")
+        modal.geometry("600x580")
+        modal.resizable(False, False)
+        modal.transient(self)
+        modal.grab_set()
+        modal.configure(fg_color=("#f8fafc", "#080c14"))
+        
+        lbl_title = ctk.CTkLabel(modal, text="Vista Previa de Correo", font=ctk.CTkFont(family="Segoe UI", size=20, weight="bold"), text_color=("#0f172a", "#f8fafc"))
+        lbl_title.pack(pady=(20, 10))
+        
+        # Contenedor de datos
+        details_frame = ctk.CTkFrame(modal, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+        details_frame.pack(fill="x", padx=30, pady=10, ipady=5)
+        details_frame.grid_columnconfigure(1, weight=1)
+        
+        ctk.CTkLabel(details_frame, text="Remitente:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=0, column=0, padx=20, pady=8, sticky="w")
+        ctk.CTkLabel(details_frame, text=self.config_user.get(), font=self.font_text, text_color=("#64748b", "#94a3b8")).grid(row=0, column=1, padx=20, pady=8, sticky="w")
+        
+        ctk.CTkLabel(details_frame, text="Destinatario:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=1, column=0, padx=20, pady=8, sticky="w")
+        ctk.CTkLabel(details_frame, text=email, font=self.font_text, text_color=("#4f46e5", "#818cf8")).grid(row=1, column=1, padx=20, pady=8, sticky="w")
+        
+        ctk.CTkLabel(details_frame, text="Adjunto:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=2, column=0, padx=20, pady=8, sticky="w")
+        ctk.CTkLabel(details_frame, text=f"{id_archivo} (Cifrado con cédula: {cedula})", font=self.font_text, text_color=("#64748b", "#94a3b8")).grid(row=2, column=1, padx=20, pady=8, sticky="w")
+        
+        ctk.CTkLabel(details_frame, text="Asunto:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=3, column=0, padx=20, pady=8, sticky="w")
+        ctk.CTkLabel(details_frame, text=subject, font=self.font_text, text_color=("#0f172a", "#f8fafc")).grid(row=3, column=1, padx=20, pady=8, sticky="w")
+        
+        # Contenedor del Cuerpo
+        body_frame = ctk.CTkFrame(modal, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+        body_frame.pack(fill="both", expand=True, padx=30, pady=(10, 20))
+        
+        ctk.CTkLabel(body_frame, text="Cuerpo del Correo:", font=self.font_label, text_color=("#334155", "#cbd5e1")).pack(anchor="w", padx=20, pady=(15, 5))
+        
+        txt_body = ctk.CTkTextbox(body_frame, font=self.font_text, corner_radius=10, fg_color=("#f8fafc", "#070a13"), border_color=("#cbd5e1", "#1e293b"), border_width=1)
+        txt_body.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        txt_body.insert("0.0", body)
+        txt_body.configure(state="disabled")
+
     def run_workflow(self, records_to_process=None):
         try:
             if records_to_process is None:
@@ -238,6 +490,12 @@ class App(ctk.CTk):
                 records = records_to_process
             
             total = len(records)
+            self.update_monitor_stats(total=total, success=0, failed=0)
+            self.add_console_log(f"Cargados {total} registros para procesar.")
+            
+            # Registrar lote en historial de SQLite
+            csv_file = self.csv_path.get() if records_to_process is None else f"Reintento: {self.csv_path.get()}"
+            lote_id = HistoryManager.add_lote(total_registros=total, exitosos=0, fallidos=0, csv_nombre=csv_file)
             
             # Refrescar config antes de enviar
             config = ConfigManager.get_config()
@@ -249,13 +507,27 @@ class App(ctk.CTk):
             
             # === FASE 1: Validación de emails antes de conectar al SMTP ===
             self.after(0, self.update_ui_status, "Validando correos electrónicos...")
+            self.add_console_log("Iniciando validación de destinatarios...")
             records_validos = []
+            valid_failed_count = 0
+            
             for i, record in enumerate(records):
                 email = str(record.get("email", "")).strip()
+                id_archivo = str(record.get("id_archivo", "")).strip()
+                id_servicio = str(record.get("id_servicio", "")).strip()
+                cedula = str(record.get("cedula", "")).strip()
+                
                 if not email:
+                    valid_failed_count += 1
+                    self.update_monitor_stats(failed=valid_failed_count)
+                    self.add_console_log("⚠ OMITIDO: Fila sin correo electrónico.")
                     continue
+                    
                 validation = validate_email(email)
                 if not validation.is_valid:
+                    valid_failed_count += 1
+                    self.update_monitor_stats(failed=valid_failed_count)
+                    
                     msg = f"{email}: {validation.message}"
                     if validation.suggestion:
                         msg += f" (Sugerencia: {validation.suggestion})"
@@ -263,77 +535,244 @@ class App(ctk.CTk):
                     errores.append(msg)
                     records_fallidos.append(record)
                     logger.warning(f"Email rechazado pre-envio: {validation.message}")
+                    self.add_console_log(f"✗ RECHAZADO: {mask_email(email)} ({validation.message})")
+                    
+                    # Registrar validación fallida en base de datos
+                    HistoryManager.add_envio(
+                        lote_id=lote_id,
+                        email=email,
+                        id_archivo=id_archivo,
+                        id_servicio=id_servicio,
+                        cedula=cedula,
+                        estado="error",
+                        detalles=f"Fallo de validación: {validation.message}"
+                    )
                 else:
                     records_validos.append(record)
             
             # Si todos los emails son inválidos, no conectar al SMTP
             if not records_validos:
                 self.after(0, self.update_ui_status, "Validación completada. Sin correos válidos.")
+                self.add_console_log("✗ PROCESO COMPLETADO: 0 correos válidos procesados.")
+                HistoryManager.update_lote_stats(lote_id=lote_id, exitosos=0, fallidos=len(errores))
                 if errores:
                     self.after(0, lambda: self.show_results_modal(errores, total, records_fallidos, email_corrections))
                 return
             
-            # === FASE 2: Envío de correos válidos ===
-            email_service = EmailService()
-            self.after(0, self.update_ui_status, "Conectando al servidor SMTP...")
-            email_service.connect()
+            # === FASE 2: Envío de correos válidos en Paralelo ===
+            self.after(0, self.update_ui_status, "Iniciando envío masivo en paralelo...")
+            self.add_console_log(f"Iniciando envío masivo para {len(records_validos)} destinatarios válidos...")
             
-            try:
-                for i, record in enumerate(records_validos):
-                    email = str(record.get("email", "")).strip()
-                    id_archivo = str(record.get("id_archivo", "")).strip()
-                    id_servicio = str(record.get("id_servicio", "")).strip()
-                    
-                    # Nueva lógica: La contraseña será la cédula
-                    cedula = str(record.get("cedula", "")).strip()
-                    
-                    # Validar existencia de datos mínimos
-                    if not email or not id_archivo or not cedula:
-                        logger.error(f"Fila {i+1} omitida: Faltan datos (email, id_archivo o cedula).")
-                        continue
-                    
-                    dynamic_password = cedula
-                    
-                    if not id_archivo.lower().endswith(".pdf"): id_archivo += ".pdf"
-                    
-                    # Sanitizar contra Path Traversal (OWASP A01)
-                    id_archivo = os.path.basename(id_archivo)
-                    input_pdf = os.path.join(self.pdf_dir.get(), id_archivo)
-                    if not os.path.exists(input_pdf):
-                        logger.error(f"Falta el archivo PDF: {input_pdf} (Destino: {mask_email(email)})")
-                        errores.append(f"{email}: PDF no encontrado ({id_archivo})")
-                        records_fallidos.append(record)
-                        total_validos = len(records_validos)
-                        self.after(0, self.update_ui_status, f"Procesando {i+1} de {total_validos}: {email} (Omitido: Sin PDF)", (i + 1) / total_validos)
-                        continue
-                    
-                    temp_pdf = os.path.join(self.pdf_dir.get(), f"temp_{id_archivo}")
-                    
-                    total_validos = len(records_validos)
-                    self.after(0, self.update_ui_status, f"Procesando {i+1} de {total_validos}: {email}")
-                    
-                    try:
-                        # Encriptación con la clave dinámica y única
-                        PDFCrypto.encrypt_pdf(input_pdf, temp_pdf, dynamic_password)
-                        
-                        # Formatear el asunto (safe replace, sin format string injection)
-                        subject = subject_template.replace("{id_servicio}", id_servicio)
-                        
-                        email_service.send_email_with_attachment(email, subject, temp_pdf, filename_override=id_archivo)
-                        logger.info(f"Éxito: {mask_email(email)}")
-                    except Exception as e:
-                        logger.error(f"Fallo con {mask_email(email)}: {str(e)}")
-                        errores.append(f"{email}: Error ({str(e)})")
-                        records_fallidos.append(record)
-                    finally:
-                        PDFCrypto.secure_cleanup(temp_pdf)
-                        
-                    total_validos = len(records_validos)
-                    self.after(0, self.update_ui_status, f"Procesando {i+1} de {total_validos}: {email}", (i + 1) / total_validos)
-            finally:
-                email_service.disconnect()
+            total_validos = len(records_validos)
+            completed_count = [0]
+            success_count = [0]
+            failed_count = [valid_failed_count]
+            lock = threading.Lock()
+            
+            # Determinar número de hilos de forma balanceada (máximo 4 trabajadores)
+            num_workers = min(4, total_validos)
+            self.add_console_log(f"Distribuyendo carga en {num_workers} hilos de ejecución SMTP...")
+            
+            # Dividir los registros en chunks balanceados
+            chunks = [records_validos[i::num_workers] for i in range(num_workers)]
+            
+            def worker_task(chunk_records, worker_id):
+                email_service = EmailService()
+                try:
+                    email_service.connect()
+                except Exception as e:
+                    logger.error(f"Hilo {worker_id} no pudo conectar a SMTP: {str(e)}")
+                    with lock:
+                        for rec in chunk_records:
+                            err_msg = f"Error de conexión SMTP ({str(e)})"
+                            errores.append(f"{rec.get('email')}: {err_msg}")
+                            records_fallidos.append(rec)
+                            completed_count[0] += 1
+                            failed_count[0] += 1
+                            self.update_monitor_stats(failed=failed_count[0])
+                            self.add_console_log(f"✗ ERROR HILO {worker_id}: {mask_email(rec.get('email'))} (Fallo conexión SMTP)")
+                            
+                            count = completed_count[0]
+                            progress = count / total_validos
+                            self.after(0, self.update_ui_status, f"Procesando {count} de {total_validos}...", progress)
+                            
+                            # Registrar fallo de conexión en base de datos
+                            HistoryManager.add_envio(
+                                lote_id=lote_id,
+                                email=str(rec.get("email", "")).strip(),
+                                id_archivo=str(rec.get("id_archivo", "")).strip(),
+                                id_servicio=str(rec.get("id_servicio", "")).strip(),
+                                cedula=str(rec.get("cedula", "")).strip(),
+                                estado="error",
+                                detalles=err_msg
+                            )
+                    return
                 
-            self.after(0, self.update_ui_status, "¡Proceso masivo completado!")
+                try:
+                    for record in chunk_records:
+                        email = str(record.get("email", "")).strip()
+                        id_archivo = str(record.get("id_archivo", "")).strip()
+                        id_servicio = str(record.get("id_servicio", "")).strip()
+                        cedula = str(record.get("cedula", "")).strip()
+                        
+                        if not email or not id_archivo or not cedula:
+                            with lock:
+                                completed_count[0] += 1
+                                failed_count[0] += 1
+                                self.update_monitor_stats(failed=failed_count[0])
+                                self.add_console_log("✗ OMITIDO: Faltan datos en el registro (email, id_archivo o cedula).")
+                                count = completed_count[0]
+                                progress = count / total_validos
+                                self.after(0, self.update_ui_status, f"Procesando {count} de {total_validos}...", progress)
+                                
+                                # Registrar omitido por datos incompletos
+                                HistoryManager.add_envio(
+                                    lote_id=lote_id,
+                                    email=email if email else "Desconocido",
+                                    id_archivo=id_archivo if id_archivo else "Desconocido",
+                                    id_servicio=id_servicio,
+                                    cedula=cedula,
+                                    estado="error",
+                                    detalles="Registro omitido: datos faltantes (email, id_archivo o cedula vacíos)"
+                                )
+                            continue
+                        
+                        # Seguridad: Sanitizar id_archivo contra path traversal
+                        id_archivo = os.path.basename(id_archivo)
+                        id_archivo = re.sub(r'[^\w.\-]', '_', id_archivo)  # Solo alfanuméricos, punto, guion
+                        
+                        if not id_archivo.lower().endswith(".pdf"):
+                            id_archivo += ".pdf"
+                        
+                        input_pdf = os.path.join(self.pdf_dir.get(), id_archivo)
+                        
+                        # Seguridad: Validar que la ruta resultante está dentro del directorio esperado
+                        real_input = os.path.realpath(input_pdf)
+                        real_dir = os.path.realpath(self.pdf_dir.get())
+                        if not real_input.startswith(real_dir + os.sep) and real_input != real_dir:
+                            logger.error(f"Intento de path traversal detectado: {id_archivo}")
+                            with lock:
+                                err_msg = f"Ruta de archivo sospechosa rechazada ({id_archivo})"
+                                errores.append(f"{email}: {err_msg}")
+                                records_fallidos.append(record)
+                                completed_count[0] += 1
+                                failed_count[0] += 1
+                                self.update_monitor_stats(failed=failed_count[0])
+                                self.add_console_log(f"✗ SEGURIDAD: Path traversal bloqueado para {mask_email(email)}")
+                                HistoryManager.add_envio(
+                                    lote_id=lote_id, email=email, id_archivo=id_archivo,
+                                    id_servicio=id_servicio, cedula=cedula,
+                                    estado="error", detalles=err_msg
+                                )
+                            continue
+                        
+                        if not os.path.exists(input_pdf):
+                            logger.error(f"Falta el archivo PDF: {os.path.basename(input_pdf)} (Destino: {mask_email(email)})")
+                            with lock:
+                                err_msg = f"PDF no encontrado ({id_archivo})"
+                                errores.append(f"{email}: {err_msg}")
+                                records_fallidos.append(record)
+                                completed_count[0] += 1
+                                failed_count[0] += 1
+                                self.update_monitor_stats(failed=failed_count[0])
+                                self.add_console_log(f"✗ ERROR: PDF no encontrado para {mask_email(email)}")
+                                count = completed_count[0]
+                                progress = count / total_validos
+                                self.after(0, self.update_ui_status, f"Procesando {count} de {total_validos}: {email} (Omitido: Sin PDF)", progress)
+                                
+                                # Registrar en base de datos
+                                HistoryManager.add_envio(
+                                    lote_id=lote_id,
+                                    email=email,
+                                    id_archivo=id_archivo,
+                                    id_servicio=id_servicio,
+                                    cedula=cedula,
+                                    estado="error",
+                                    detalles=err_msg
+                                )
+                            continue
+                        
+                        # Seguridad: Usar tempfile.mkstemp en un directorio temporal seguro del sistema (previene symlink y TOCTOU attacks)
+                        fd, temp_pdf = tempfile.mkstemp(suffix=".pdf", prefix=f"sems_{worker_id}_", dir=tempfile.gettempdir())
+                        os.close(fd)  # Cerrar descriptor, pikepdf abrirá por ruta
+                        
+                        try:
+                            # Encriptación
+                            PDFCrypto.encrypt_pdf(input_pdf, temp_pdf, cedula)
+                            
+                            # Formatear el asunto
+                            subject = subject_template.replace("{id_servicio}", id_servicio)
+                            
+                            # Enviar correo
+                            email_service.send_email_with_attachment(email, subject, temp_pdf, filename_override=id_archivo)
+                            logger.info(f"Éxito: {mask_email(email)}")
+                            
+                            with lock:
+                                success_count[0] += 1
+                                self.update_monitor_stats(success=success_count[0])
+                                self.add_console_log(f"✓ ENVIADO: {mask_email(email)} - PDF Cifrado")
+                                
+                                # Registrar éxito en base de datos
+                                HistoryManager.add_envio(
+                                    lote_id=lote_id,
+                                    email=email,
+                                    id_archivo=id_archivo,
+                                    id_servicio=id_servicio,
+                                    cedula=cedula,
+                                    estado="exito",
+                                    detalles=None
+                                )
+                        except Exception as e:
+                            logger.error(f"Fallo con {mask_email(email)}: {str(e)}")
+                            with lock:
+                                err_msg = str(e)
+                                errores.append(f"{email}: Error ({err_msg})")
+                                records_fallidos.append(record)
+                                failed_count[0] += 1
+                                self.update_monitor_stats(failed=failed_count[0])
+                                self.add_console_log(f"✗ ERROR: {mask_email(email)} - {err_msg}")
+                                
+                                # Registrar error en base de datos
+                                HistoryManager.add_envio(
+                                    lote_id=lote_id,
+                                    email=email,
+                                    id_archivo=id_archivo,
+                                    id_servicio=id_servicio,
+                                    cedula=cedula,
+                                    estado="error",
+                                    detalles=err_msg
+                                )
+                        finally:
+                            # Mover la limpieza de archivos temporales a un hilo asíncrono secundario
+                            if os.path.exists(temp_pdf):
+                                threading.Thread(target=PDFCrypto.secure_cleanup, args=(temp_pdf,), daemon=True).start()
+                        
+                        with lock:
+                            completed_count[0] += 1
+                            count = completed_count[0]
+                            progress = count / total_validos
+                            self.after(0, self.update_ui_status, f"Procesando {count} de {total_validos}: {email}", progress)
+                finally:
+                    email_service.disconnect()
+            
+            # Ejecutar trabajadores en el ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                for w_id, chunk in enumerate(chunks):
+                    executor.submit(worker_task, chunk, w_id)
+            
+            # Consolidar totales finales en base de datos
+            exitosos_total = total - len(errores)
+            HistoryManager.update_lote_stats(lote_id=lote_id, exitosos=exitosos_total, fallidos=len(errores))
+            
+            self.after(0, self.update_ui_status, "¡Proceso masivo completado!", 1.0)
+            self.add_console_log(f"✓ COMPLETADO: {exitosos_total} exitosos, {len(errores)} fallidos.")
+            
+            # Lanzar notificación de escritorio si la aplicación está minimizada
+            if self.state() == "iconic":
+                self.show_desktop_notification(
+                    "Envío Masivo Terminado",
+                    f"El proceso ha finalizado. Éxitos: {exitosos_total}, Errores: {len(errores)}"
+                )
             
             if errores:
                 self.after(0, lambda: self.show_results_modal(errores, total, records_fallidos, email_corrections))
@@ -342,22 +781,25 @@ class App(ctk.CTk):
             
         except Exception as e:
             self.after(0, self.update_ui_status, "Error crítico en el proceso.")
+            self.add_console_log(f"✗ ERROR CRÍTICO: {str(e)}")
             self.after(0, lambda e=e: messagebox.showerror("Error", f"Ocurrió un error: {str(e)}"))
             
         finally:
-            self.after(0, lambda: self.btn_start.configure(state="normal", fg_color="#10b981"))
+            self.after(0, lambda: self.btn_start.configure(state="normal", fg_color=("#10b981", "#059669")))
+            self.after(0, lambda: self.btn_preview.configure(state="normal", fg_color=("#3b82f6", "#2563eb")))
 
     def show_results_modal(self, errores, total, records_fallidos, email_corrections=None):
         if email_corrections is None:
             email_corrections = {}
         
         modal = ctk.CTkToplevel(self)
-        modal.title("Reporte de Envios")
-        modal.geometry("620x560")
+        modal.title("Reporte de Envíos")
+        modal.geometry("620x580")
         modal.resizable(False, False)
         
         modal.transient(self)
         modal.grab_set()
+        modal.configure(fg_color=("#f8fafc", "#080c14"))
         
         # Evitar TclError al cerrar el modal con la X mientras un widget tiene foco
         def safe_close_modal():
@@ -369,36 +811,36 @@ class App(ctk.CTk):
         
         modal.protocol("WM_DELETE_WINDOW", safe_close_modal)
 
-        lbl_title = ctk.CTkLabel(modal, text="Atencion Requerida", font=ctk.CTkFont(size=24, weight="bold"), text_color="#f59e0b")
+        lbl_title = ctk.CTkLabel(modal, text="Atención Requerida", font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold"), text_color=("#d97706", "#fbbf24"))
         lbl_title.pack(pady=(25, 10))
 
         exitosos = total - len(errores)
         
         # Tarjeta de Resumen
-        card_summary = ctk.CTkFrame(modal, corner_radius=15, fg_color=("gray85", "gray17"))
+        card_summary = ctk.CTkFrame(modal, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
         card_summary.pack(fill="x", padx=30, pady=(10, 15), ipady=10)
         
-        lbl_total = ctk.CTkLabel(card_summary, text=f"Total: {total}", font=self.font_label)
+        lbl_total = ctk.CTkLabel(card_summary, text=f"Total: {total}", font=self.font_label, text_color=("#475569", "#cbd5e1"))
         lbl_total.pack(side="left", expand=True)
-        lbl_success = ctk.CTkLabel(card_summary, text=f"Exitos: {exitosos}", font=self.font_label, text_color="#10b981")
+        lbl_success = ctk.CTkLabel(card_summary, text=f"Éxitos: {exitosos}", font=self.font_label, text_color=("#10b981", "#34d399"))
         lbl_success.pack(side="left", expand=True)
-        lbl_err = ctk.CTkLabel(card_summary, text=f"Errores: {len(errores)}", font=self.font_label, text_color="#ef4444")
+        lbl_err = ctk.CTkLabel(card_summary, text=f"Errores: {len(errores)}", font=self.font_label, text_color=("#ef4444", "#f87171"))
         lbl_err.pack(side="left", expand=True)
 
         # Si hay correcciones disponibles, mostrar un aviso
         if email_corrections:
-            card_fix = ctk.CTkFrame(modal, corner_radius=10, fg_color=("#fef3c7", "#422006"))
+            card_fix = ctk.CTkFrame(modal, corner_radius=12, fg_color=("#fef3c7", "#291505"), border_width=1, border_color=("#f59e0b", "#d97706"))
             card_fix.pack(fill="x", padx=30, pady=(0, 10), ipady=5)
             fix_count = len(email_corrections)
             lbl_fix = ctk.CTkLabel(
                 card_fix, 
-                text=f"Se detectaron {fix_count} correo(s) con errores corregibles automaticamente.",
-                font=self.font_text, text_color=("#92400e", "#fbbf24")
+                text=f"Se detectaron {fix_count} correo(s) con errores corregibles automáticamente.",
+                font=self.font_text, text_color=("#92400e", "#fde047")
             )
             lbl_fix.pack(padx=15, pady=8)
 
         # Textbox con los errores
-        txt_errors = ctk.CTkTextbox(modal, width=560, height=200, font=self.font_text, corner_radius=10, fg_color=("gray90", "gray13"))
+        txt_errors = ctk.CTkTextbox(modal, width=560, height=200, font=self.font_text, corner_radius=12, fg_color=("#f8fafc", "#070a13"), text_color=("#334155", "#cbd5e1"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
         txt_errors.pack(pady=10, padx=30)
         
         report_text = "--- REPORTE DE ERRORES ---\n\n"
@@ -452,6 +894,17 @@ class App(ctk.CTk):
             threading.Thread(target=run_corrected, daemon=True).start()
 
         def retry_failed():
+            # Seguridad: Limitar reintentos para prevenir abuso de SMTP y bloqueo de cuenta
+            self._retry_count += 1
+            if self._retry_count > self.MAX_RETRIES:
+                messagebox.showwarning(
+                    "Límite Alcanzado",
+                    f"Se han alcanzado {self.MAX_RETRIES} reintentos máximos por seguridad.\n"
+                    f"Verifique manualmente los correos restantes antes de reiniciar.",
+                    parent=modal
+                )
+                return
+            
             # Deshabilitar botones mientras reintenta
             btn_retry.configure(state="disabled", text="Reintentando...", fg_color="#4b5563")
             btn_copy.configure(state="disabled")
@@ -461,7 +914,7 @@ class App(ctk.CTk):
             
             self.btn_start.configure(state="disabled", fg_color="#4b5563")
             self.progress_bar.set(0)
-            self.lbl_status.configure(text=f"Reintentando {len(records_fallidos)} envios fallidos...")
+            self.lbl_status.configure(text=f"Reintentando {len(records_fallidos)} envios fallidos... (Intento {self._retry_count}/{self.MAX_RETRIES})")
             
             def run_and_update():
                 self.run_workflow(records_fallidos)
@@ -480,19 +933,248 @@ class App(ctk.CTk):
         btn_frame = ctk.CTkFrame(modal, fg_color="transparent")
         btn_frame.pack(pady=(15, 10), fill="x", padx=30)
         
-        btn_copy = ctk.CTkButton(btn_frame, text="Copiar Reporte", command=copy_to_clipboard, width=140, height=45, corner_radius=10, fg_color="#4b5563", hover_color="#374151")
+        btn_copy = ctk.CTkButton(btn_frame, text="Copiar Reporte", command=copy_to_clipboard, width=140, height=45, corner_radius=12, fg_color=("#4b5563", "#374151"), hover_color=("#374151", "#1f2937"))
         btn_copy.pack(side="left", padx=5, expand=True)
 
         if email_corrections:
             btn_correct = ctk.CTkButton(
                 btn_frame, text="Corregir y Reintentar", command=correct_and_retry,
-                width=180, height=45, corner_radius=10,
-                font=ctk.CTkFont(weight="bold"),
-                fg_color="#10b981", hover_color="#059669", text_color="white"
+                width=180, height=45, corner_radius=12,
+                font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
+                fg_color=("#10b981", "#059669"), hover_color=("#059669", "#047857"), text_color="white"
             )
             btn_correct.pack(side="left", padx=5, expand=True)
 
         if records_fallidos:
-            btn_retry = ctk.CTkButton(btn_frame, text="Reintentar Fallidos", command=retry_failed, width=160, height=45, corner_radius=10, font=ctk.CTkFont(weight="bold"), fg_color="#f59e0b", hover_color="#d97706", text_color="white")
+            btn_retry = ctk.CTkButton(btn_frame, text="Reintentar Fallidos", command=retry_failed, width=160, height=45, corner_radius=12, font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"), fg_color=("#f59e0b", "#d97706"), hover_color=("#d97706", "#b45309"), text_color="white")
             btn_retry.pack(side="right", padx=5, expand=True)
+
+    def setup_history_view(self):
+        """Inicializa la estructura visual de la vista de Historial de Auditoría."""
+        # Header
+        lbl_title = ctk.CTkLabel(self.history_frame, text="Historial de Auditoría", font=self.font_title, text_color=("#0f172a", "#f8fafc"))
+        lbl_title.pack(anchor="w", pady=(0, 2))
+        
+        lbl_subtitle = ctk.CTkLabel(self.history_frame, text="Consulte el registro histórico y la trazabilidad de todos los envíos masivos realizados", font=ctk.CTkFont(family="Segoe UI", size=13), text_color=("#64748b", "#94a3b8"))
+        lbl_subtitle.pack(anchor="w", pady=(0, 20))
+        
+        # Card del buscador (Buscador superior con diseño Slate/Obsidian)
+        search_card = ctk.CTkFrame(self.history_frame, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+        search_card.pack(fill="x", pady=(0, 20), ipady=5)
+        search_card.grid_columnconfigure(0, weight=1)
+        
+        self.search_query = ctk.StringVar()
+        self.search_entry = ctk.CTkEntry(
+            search_card, textvariable=self.search_query, font=self.font_text, height=36,
+            fg_color=("#f8fafc", "#070a13"), border_color=("#cbd5e1", "#1e293b"),
+            placeholder_text="Buscar en todos los envíos por email, cédula, ID de servicio o archivo..."
+        )
+        self.search_entry.grid(row=0, column=0, padx=(20, 10), pady=15, sticky="ew")
+        
+        btn_search = ctk.CTkButton(
+            search_card, text="🔍 Buscar", font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"), width=100, height=36,
+            fg_color=("#3b82f6", "#2563eb"), hover_color=("#2563eb", "#1d4ed8"), command=self.perform_history_search
+        )
+        btn_search.grid(row=0, column=1, padx=5, pady=15)
+        
+        btn_clear_search = ctk.CTkButton(
+            search_card, text="Limpiar", font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"), width=80, height=36,
+            fg_color=("#4b5563", "#374151"), hover_color=("#374151", "#1f2937"), command=self.clear_history_search
+        )
+        btn_clear_search.grid(row=0, column=2, padx=(5, 20), pady=15)
+        
+        # Contenedor dinámico (Scrollable Frame) para los resultados o lotes con estética premium
+        self.history_content_frame = ctk.CTkScrollableFrame(self.history_frame, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+        self.history_content_frame.pack(fill="both", expand=True)
+
+    def load_history_batches(self):
+        """Carga y muestra el listado de todos los lotes de envío con diseño premium."""
+        # Limpiar el frame de contenido
+        for widget in self.history_content_frame.winfo_children():
+            widget.destroy()
+        
+        self.search_query.set("") # Limpiar texto de búsqueda
+        
+        lotes = HistoryManager.get_lotes()
+        if not lotes:
+            lbl_empty = ctk.CTkLabel(
+                self.history_content_frame, 
+                text="No hay registros de envíos en el historial todavía.", 
+                font=self.font_status, text_color=("#64748b", "#94a3b8")
+            )
+            lbl_empty.pack(pady=50)
+            return
+            
+        lbl_subtitle = ctk.CTkLabel(
+            self.history_content_frame, 
+            text="📋 Lotes Recientes de Envíos Masivos", 
+            font=ctk.CTkFont(family="Segoe UI", size=15, weight="bold"),
+            text_color=("#0f172a", "#f8fafc")
+        )
+        lbl_subtitle.pack(anchor="w", padx=20, pady=(15, 10))
+        
+        for lote in lotes:
+            # Crear una tarjeta para cada lote con estética Obsidian Slate
+            lote_card = ctk.CTkFrame(self.history_content_frame, corner_radius=12, fg_color=("#f8fafc", "#070a13"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+            lote_card.pack(fill="x", padx=15, pady=8, ipady=5)
+            lote_card.grid_columnconfigure(0, weight=1)
+            
+            # Texto descriptivo (Lote #, Fecha, Archivo)
+            lote_id = lote['id']
+            fecha = lote['fecha']
+            csv_nombre = lote['csv_nombre']
+            total = lote['total_registros']
+            exitos = lote['exitosos']
+            fallos = lote['fallidos']
+            
+            info_text = f"Lote #{lote_id} — {fecha}\nCSV: {csv_nombre}"
+            lbl_info = ctk.CTkLabel(lote_card, text=info_text, font=self.font_text, justify="left", anchor="w", text_color=("#334155", "#cbd5e1"))
+            lbl_info.grid(row=0, column=0, padx=20, pady=10, sticky="w")
+            
+            # Contadores
+            stat_frame = ctk.CTkFrame(lote_card, fg_color="transparent")
+            stat_frame.grid(row=0, column=1, padx=10, pady=10)
+            
+            ctk.CTkLabel(stat_frame, text=f"Total: {total}", font=self.font_text, text_color=("#475569", "#94a3b8")).pack(side="left", padx=10)
+            ctk.CTkLabel(stat_frame, text=f"Éxitos: {exitos}", font=self.font_label, text_color=("#10b981", "#34d399")).pack(side="left", padx=10)
+            ctk.CTkLabel(stat_frame, text=f"Fallos: {fallos}", font=self.font_label, text_color=("#ef4444", "#f87171")).pack(side="left", padx=10)
+            
+            # Botón Ver Detalle del lote
+            btn_details = ctk.CTkButton(
+                lote_card, text="Ver Detalle", font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"), width=100, height=32,
+                fg_color=("#4f46e5", "#6366f1"), hover_color=("#4338ca", "#4f46e5"),
+                command=lambda lid=lote_id, ldata=lote: self.show_lote_details_modal(lid, ldata)
+            )
+            btn_details.grid(row=0, column=2, padx=20, pady=10)
+
+    def show_lote_details_modal(self, lote_id, lote_data):
+        """Abre un modal premium con la lista detallada de envíos en el lote."""
+        modal = ctk.CTkToplevel(self)
+        modal.title(f"Detalle de Envío - Lote #{lote_id}")
+        modal.geometry("750x580")
+        modal.resizable(False, False)
+        modal.transient(self)
+        modal.grab_set()
+        modal.configure(fg_color=("#f8fafc", "#080c14"))
+        
+        lbl_title = ctk.CTkLabel(modal, text=f"Detalle del Lote #{lote_id}", font=ctk.CTkFont(family="Segoe UI", size=20, weight="bold"), text_color=("#0f172a", "#f8fafc"))
+        lbl_title.pack(pady=(20, 5))
+        
+        # Tarjeta de datos del lote con estética premium
+        info_frame = ctk.CTkFrame(modal, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+        info_frame.pack(fill="x", padx=30, pady=10, ipady=5)
+        
+        info_str = f"Archivo: {lote_data['csv_nombre']}   |   Fecha: {lote_data['fecha']}"
+        ctk.CTkLabel(info_frame, text=info_str, font=self.font_text, text_color=("#334155", "#cbd5e1")).pack(pady=5)
+        
+        stats_str = f"Total Registros: {lote_data['total_registros']}   -   Exitosos: {lote_data['exitosos']}   -   Fallidos: {lote_data['fallidos']}"
+        ctk.CTkLabel(
+            info_frame, text=stats_str, font=self.font_label, 
+            text_color=("#4f46e5", "#818cf8")
+        ).pack(pady=(0, 5))
+        
+        # Scrollable Frame con los envíos del lote
+        envios_scroll = ctk.CTkScrollableFrame(modal, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+        envios_scroll.pack(fill="both", expand=True, padx=30, pady=10)
+        
+        envios = HistoryManager.get_envios_by_lote(lote_id)
+        if not envios:
+            ctk.CTkLabel(envios_scroll, text="No hay registros individuales para este lote.", font=self.font_status, text_color=("#64748b", "#94a3b8")).pack(pady=40)
+        else:
+            for ev in envios:
+                row_frame = ctk.CTkFrame(envios_scroll, corner_radius=12, fg_color=("#f8fafc", "#070a13"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+                row_frame.pack(fill="x", pady=4, padx=5, ipady=3)
+                row_frame.grid_columnconfigure(0, weight=1)
+                
+                # Datos de registro
+                email = ev['email']
+                cedula = ev['cedula']
+                id_archivo = ev['id_archivo']
+                id_servicio = ev['id_servicio']
+                estado = ev['estado']
+                detalles = ev['detalles']
+                
+                desc = f"Email: {email}\nCédula: {cedula} | Servicio: {id_servicio} | Archivo: {id_archivo}"
+                lbl_desc = ctk.CTkLabel(row_frame, text=desc, font=self.font_text, justify="left", anchor="w", text_color=("#334155", "#cbd5e1"))
+                lbl_desc.grid(row=0, column=0, padx=15, pady=8, sticky="w")
+                
+                # Etiqueta Estado estilizada
+                if estado == "exito":
+                    lbl_est = ctk.CTkLabel(row_frame, text="EXITOSO", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color="white", fg_color="#10b981", corner_radius=6, width=90, height=26)
+                else:
+                    lbl_est = ctk.CTkLabel(row_frame, text="FALLIDO", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color="white", fg_color="#ef4444", corner_radius=6, width=90, height=26)
+                lbl_est.grid(row=0, column=1, padx=15, pady=8, sticky="e")
+                
+                # Detalles del error
+                if detalles:
+                    lbl_det = ctk.CTkLabel(row_frame, text=f"Detalle: {detalles}", font=ctk.CTkFont(family="Segoe UI", size=11, slant="italic"), text_color=("#ef4444", "#f87171"), justify="left", anchor="w")
+                    lbl_det.grid(row=1, column=0, columnspan=2, padx=15, pady=(0, 8), sticky="w")
+                    
+        # Botón para cerrar modal
+        btn_close = ctk.CTkButton(modal, text="Cerrar", font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"), width=140, height=42, fg_color=("#4b5563", "#374151"), hover_color=("#374151", "#1f2937"), command=modal.destroy)
+        btn_close.pack(pady=15)
+
+    def perform_history_search(self):
+        """Ejecuta la búsqueda global del historial y despliega las tarjetas con estilo premium."""
+        query = self.search_query.get().strip()
+        if not query:
+            self.load_history_batches()
+            return
+            
+        # Limpiar el frame de contenido
+        for widget in self.history_content_frame.winfo_children():
+            widget.destroy()
+            
+        results = HistoryManager.search_envios(query)
+        
+        lbl_subtitle = ctk.CTkLabel(
+            self.history_content_frame, 
+            text=f"🔍 Resultados de búsqueda para: '{query}' ({len(results)} encontrados)", 
+            font=ctk.CTkFont(family="Segoe UI", size=16, weight="bold"),
+            text_color=("#0f172a", "#f8fafc")
+        )
+        lbl_subtitle.pack(anchor="w", padx=20, pady=(15, 10))
+        
+        if not results:
+            lbl_empty = ctk.CTkLabel(
+                self.history_content_frame, 
+                text="No se encontraron coincidencias en los envíos de historial.", 
+                font=self.font_status, text_color=("#64748b", "#94a3b8")
+            )
+            lbl_empty.pack(pady=50)
+            return
+            
+        for ev in results:
+            row_frame = ctk.CTkFrame(self.history_content_frame, corner_radius=12, fg_color=("#f8fafc", "#070a13"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+            row_frame.pack(fill="x", padx=15, pady=6, ipady=5)
+            row_frame.grid_columnconfigure(0, weight=1)
+            
+            email = ev['email']
+            cedula = ev['cedula']
+            id_archivo = ev['id_archivo']
+            id_servicio = ev['id_servicio']
+            estado = ev['estado']
+            detalles = ev['detalles']
+            fecha = ev['fecha']
+            csv_nombre = ev.get('csv_nombre', 'N/A')
+            
+            desc = f"Fecha: {fecha} | Lote CSV: {csv_nombre}\nDestinatario: {email}\nCédula: {cedula} | Servicio: {id_servicio} | Archivo: {id_archivo}"
+            lbl_desc = ctk.CTkLabel(row_frame, text=desc, font=self.font_text, justify="left", anchor="w", text_color=("#334155", "#cbd5e1"))
+            lbl_desc.grid(row=0, column=0, padx=20, pady=10, sticky="w")
+            
+            # Etiqueta Estado
+            if estado == "exito":
+                lbl_est = ctk.CTkLabel(row_frame, text="ÉXITO", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color="white", fg_color="#10b981", corner_radius=6, width=90, height=26)
+            else:
+                lbl_est = ctk.CTkLabel(row_frame, text="FALLIDO", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color="white", fg_color="#ef4444", corner_radius=6, width=90, height=26)
+            lbl_est.grid(row=0, column=1, padx=20, pady=10, sticky="e")
+            
+            if detalles:
+                lbl_det = ctk.CTkLabel(row_frame, text=f"Detalle: {detalles}", font=ctk.CTkFont(family="Segoe UI", size=11, slant="italic"), text_color=("#ef4444", "#f87171"), justify="left", anchor="w")
+                lbl_det.grid(row=1, column=0, columnspan=2, padx=20, pady=(0, 10), sticky="w")
+
+    def clear_history_search(self):
+        """Limpia el cuadro de búsqueda y vuelve a cargar los lotes del historial."""
+        self.load_history_batches()
+
 

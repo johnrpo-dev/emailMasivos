@@ -1,6 +1,19 @@
 import logging
 import os
+import re
 from logging.handlers import RotatingFileHandler
+
+
+class PIIFilter(logging.Filter):
+    """Filtro que redacta automáticamente secuencias numéricas largas (cédulas/documentos)
+    de los mensajes de log para prevenir exposición accidental de PII."""
+    _pattern = re.compile(r'\b\d{7,}\b')
+    
+    def filter(self, record):
+        if isinstance(record.msg, str):
+            record.msg = self._pattern.sub('[REDACTED]', record.msg)
+        return True
+
 
 def setup_logger(log_file="app.log"):
     """Configura y retorna el logger principal de la aplicación."""
@@ -23,6 +36,10 @@ def setup_logger(log_file="app.log"):
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
+        
+        # Filtro PII: redactar cédulas y documentos numéricos en todos los logs
+        pii_filter = PIIFilter()
+        logger.addFilter(pii_filter)
         
     return logger
 

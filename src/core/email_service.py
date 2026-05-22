@@ -1,5 +1,6 @@
 import smtplib
 import os
+import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
@@ -22,12 +23,48 @@ class EmailService:
         self.server = None
         
     def connect(self):
-        """Abre la conexión SMTP con el servidor."""
+        """Abre la conexión SMTP con el servidor de forma segura.
+        
+        Soporta SMTPS (implícito en puerto 465) y STARTTLS (explícito en puerto 587/otros),
+        con validación estricta de certificados SSL/TLS para prevenir ataques MITM y stripping.
+        """
         if not self.user or not self.password:
-            raise ValueError("Las credenciales SMTP no están configuradas correctamente en el archivo .env")
-        self.server = smtplib.SMTP(self.host, self.port, timeout=30)
-        self.server.starttls() # TLS 1.2
-        self.server.login(self.user, self.password)
+            raise ValueError("Las credenciales SMTP no están configuradas correctamente en el archivo de configuración.")
+        
+        # Crear contexto SSL seguro por defecto (valida certificados de CA y hostname)
+        context = ssl.create_default_context()
+        
+        try:
+            if self.port == 465:
+                logger.info("Estableciendo conexión cifrada implícita SMTPS (puerto 465)...")
+                self.server = smtplib.SMTP_SSL(self.host, self.port, context=context, timeout=30)
+            else:
+                logger.info(f"Estableciendo conexión SMTP estándar (puerto {self.port})...")
+                self.server = smtplib.SMTP(self.host, self.port, timeout=30)
+                
+                # Handshake inicial EHLO
+                self.server.ehlo()
+                
+                # Mitigación STARTTLS Stripping: Verificar que el servidor soporte STARTTLS
+                if not self.server.has_extn("starttls"):
+                    self.server.quit()
+                    raise ConnectionError("El servidor SMTP no anuncia soporte para STARTTLS. Conexión abortada por seguridad.")
+                
+                # Actualizar el canal a cifrado SSL/TLS de forma segura con el contexto verificado
+                self.server.starttls(context=context)
+                self.server.ehlo()  # Re-identificar sobre el canal seguro
+                
+            self.server.login(self.user, self.password)
+            logger.info("Conexión SMTP autenticada de forma segura.")
+        except Exception as e:
+            logger.error(f"Fallo al conectar al servidor SMTP seguro ({self.host}:{self.port}): {str(e)}")
+            if self.server:
+                try:
+                    self.server.quit()
+                except Exception:
+                    pass
+                self.server = None
+            raise e
         
     def disconnect(self):
         """Cierra la conexión SMTP."""

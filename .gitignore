@@ -9,3 +9,5 @@ data/output/
 .env
 **/app.log
 .pytest_cache/
+data/*.db
+*.db
