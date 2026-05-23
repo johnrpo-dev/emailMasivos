@@ -5,6 +5,12 @@ import os
 import re
 import threading
 import subprocess
+import secrets
+import hmac
+import hashlib
+import tempfile
+import glob
+import atexit
 from src.core.data_manager import DataManager
 from src.config.config_manager import ConfigManager
 from src.utils.logger import logger
@@ -21,6 +27,7 @@ class App(ctk.CTk):
         
         # Inicializar historial efímero en memoria RAM (Zero-Footprint)
         self.session_batches = []
+        self._hmac_key = secrets.token_bytes(32)
         
         # Tema Global Premium
         ctk.set_appearance_mode("dark")
@@ -59,6 +66,10 @@ class App(ctk.CTk):
         # Cargar config
         self.load_settings()
         self.setup_ui()
+        
+        # Seguridad: Manejar cierre de ventana para limpiar archivos temporales
+        self.protocol("WM_DELETE_WINDOW", self._on_closing)
+        atexit.register(self._emergency_cleanup_temp_files)
         
     def load_settings(self):
         config = ConfigManager.get_config()
@@ -414,6 +425,7 @@ class App(ctk.CTk):
         orchestrator.start(
             csv_path=self.csv_path.get(),
             pdf_dir=self.pdf_dir.get(),
+            hmac_key=self._hmac_key,
             on_batch_added=on_batch_added,
             on_log=on_log,
             on_progress=on_progress,
@@ -513,7 +525,7 @@ class App(ctk.CTk):
         ctk.CTkLabel(details_frame, text=email, font=self.font_text, text_color=("#4f46e5", "#818cf8")).grid(row=1, column=1, padx=20, pady=8, sticky="w")
         
         ctk.CTkLabel(details_frame, text="Adjunto:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=2, column=0, padx=20, pady=8, sticky="w")
-        ctk.CTkLabel(details_frame, text=f"{id_archivo} (Cifrado con cédula: {cedula})", font=self.font_text, text_color=("#64748b", "#94a3b8")).grid(row=2, column=1, padx=20, pady=8, sticky="w")
+        ctk.CTkLabel(details_frame, text=f"{id_archivo} (Protegido con contraseña)", font=self.font_text, text_color=("#64748b", "#94a3b8")).grid(row=2, column=1, padx=20, pady=8, sticky="w")
         
         ctk.CTkLabel(details_frame, text="Asunto:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=3, column=0, padx=20, pady=8, sticky="w")
         ctk.CTkLabel(details_frame, text=subject, font=self.font_text, text_color=("#0f172a", "#f8fafc")).grid(row=3, column=1, padx=20, pady=8, sticky="w")
@@ -822,7 +834,7 @@ class App(ctk.CTk):
                 estado = ev['estado']
                 detalles = ev['detalles']
                 
-                desc = f"Email: {email}\nCédula: {cedula} | Servicio: {id_servicio} | Archivo: {id_archivo}"
+                desc = f"Email: {email}\nID: {cedula} | Servicio: {id_servicio} | Archivo: {id_archivo}"
                 lbl_desc = ctk.CTkLabel(row_frame, text=desc, font=self.font_text, justify="left", anchor="w", text_color=("#334155", "#cbd5e1"))
                 lbl_desc.grid(row=0, column=0, padx=15, pady=8, sticky="w")
                 
@@ -844,7 +856,6 @@ class App(ctk.CTk):
 
     def perform_history_search(self):
         """Ejecuta la búsqueda global del historial y despliega las tarjetas con estilo premium."""
-        import hashlib
         query = self.search_query.get().strip()
         if not query:
             self.load_history_batches()
@@ -857,9 +868,9 @@ class App(ctk.CTk):
         query_strip = query.strip()
         query_lower = query_strip.lower()
         
-        # Calcular hashes para búsqueda exacta segura de PII
-        query_email_hash = hashlib.sha256(query_lower.encode()).hexdigest()
-        query_cedula_hash = hashlib.sha256(query_strip.encode()).hexdigest()
+        # Calcular HMAC-SHA256 para búsqueda exacta segura de PII
+        query_email_hash = hmac.new(self._hmac_key, query_lower.encode(), hashlib.sha256).hexdigest()
+        query_cedula_hash = hmac.new(self._hmac_key, query_strip.encode(), hashlib.sha256).hexdigest()
         
         results = []
         for lote in self.session_batches:
@@ -916,7 +927,7 @@ class App(ctk.CTk):
             fecha = ev['fecha']
             csv_nombre = ev.get('csv_nombre', 'N/A')
             
-            desc = f"Fecha: {fecha} | Lote CSV: {csv_nombre}\nDestinatario: {email}\nCédula: {cedula} | Servicio: {id_servicio} | Archivo: {id_archivo}"
+            desc = f"Fecha: {fecha} | Lote CSV: {csv_nombre}\nDestinatario: {email}\nID: {cedula} | Servicio: {id_servicio} | Archivo: {id_archivo}"
             lbl_desc = ctk.CTkLabel(row_frame, text=desc, font=self.font_text, justify="left", anchor="w", text_color=("#334155", "#cbd5e1"))
             lbl_desc.grid(row=0, column=0, padx=20, pady=10, sticky="w")
             
@@ -935,4 +946,27 @@ class App(ctk.CTk):
         """Limpia el cuadro de búsqueda y vuelve a cargar los lotes del historial."""
         self.load_history_batches()
 
+    def _emergency_cleanup_temp_files(self):
+        """Limpieza de emergencia: sobreescribe y elimina temporales sems_*.pdf del directorio temporal."""
+        try:
+            temp_dir = tempfile.gettempdir()
+            for temp_file in glob.glob(os.path.join(temp_dir, "sems_*.pdf")):
+                try:
+                    size = os.path.getsize(temp_file)
+                    if size > 0:
+                        with open(temp_file, "r+b") as f:
+                            f.seek(0)
+                            f.write(os.urandom(size))
+                    os.remove(temp_file)
+                except Exception:
+                    try:
+                        os.remove(temp_file)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
+    def _on_closing(self):
+        """Manejador de cierre seguro: limpia temporales antes de destruir la ventana."""
+        self._emergency_cleanup_temp_files()
+        self.destroy()

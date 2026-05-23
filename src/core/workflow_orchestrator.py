@@ -3,6 +3,7 @@ import re
 import tempfile
 import threading
 import hashlib
+import hmac
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from src.core.data_manager import DataManager
@@ -24,6 +25,7 @@ class WorkflowOrchestrator:
         self.MAX_RETRIES = 2
 
     def start(self, csv_path: str, pdf_dir: str,
+              hmac_key: bytes = None,
               on_batch_added=None,
               on_log=None,
               on_progress=None,
@@ -35,6 +37,7 @@ class WorkflowOrchestrator:
             target=self._run_workflow,
             args=(csv_path, pdf_dir),
             kwargs={
+                "hmac_key": hmac_key,
                 "on_batch_added": on_batch_added,
                 "on_log": on_log,
                 "on_progress": on_progress,
@@ -48,6 +51,7 @@ class WorkflowOrchestrator:
         return thread
 
     def _run_workflow(self, csv_path: str, pdf_dir: str,
+                      hmac_key: bytes = None,
                       on_batch_added=None,
                       on_log=None,
                       on_progress=None,
@@ -55,6 +59,12 @@ class WorkflowOrchestrator:
                       on_complete=None,
                       records_to_process=None):
         """Método de ejecución interno que corre exclusivamente en un hilo secundario."""
+        # Helper HMAC-SHA256 para hash seguro de PII (captura hmac_key del closure)
+        def _h(value: str) -> str:
+            if not value or not hmac_key:
+                return ""
+            return hmac.new(hmac_key, value.encode(), hashlib.sha256).hexdigest()
+        
         try:
             # 1. Cargar registros (de CSV o de un reintento previo)
             if records_to_process is None:
@@ -131,11 +141,11 @@ class WorkflowOrchestrator:
                     # Registrar validación fallida en memoria RAM (efímero y ofuscado)
                     batch_record["envios"].append({
                         "email": mask_email(email),
-                        "email_hash": hashlib.sha256(email.strip().lower().encode()).hexdigest() if email else "",
+                        "email_hash": _h(email.strip().lower()),
                         "id_archivo": id_archivo,
                         "id_servicio": id_servicio,
                         "cedula": f"***{cedula[-3:]}" if len(cedula) >= 3 else "***",
-                        "cedula_hash": hashlib.sha256(cedula.strip().encode()).hexdigest() if cedula else "",
+                        "cedula_hash": _h(cedula.strip()),
                         "estado": "error",
                         "detalles": f"Fallo de validación: {validation.message}"
                     })
@@ -204,11 +214,11 @@ class WorkflowOrchestrator:
                             rec_ced = str(rec.get("cedula", "")).strip()
                             batch_record["envios"].append({
                                 "email": mask_email(rec_email),
-                                "email_hash": hashlib.sha256(rec_email.strip().lower().encode()).hexdigest() if rec_email else "",
+                                "email_hash": _h(rec_email.strip().lower()),
                                 "id_archivo": os.path.basename(rec_file),
                                 "id_servicio": rec_srv,
                                 "cedula": f"***{rec_ced[-3:]}" if len(rec_ced) >= 3 else "***",
-                                "cedula_hash": hashlib.sha256(rec_ced.strip().encode()).hexdigest() if rec_ced else "",
+                                "cedula_hash": _h(rec_ced.strip()),
                                 "estado": "error",
                                 "detalles": err_msg
                             })
@@ -236,11 +246,11 @@ class WorkflowOrchestrator:
                                 
                                 batch_record["envios"].append({
                                     "email": mask_email(email) if email else "Desconocido",
-                                    "email_hash": hashlib.sha256(email.strip().lower().encode()).hexdigest() if email else "",
+                                    "email_hash": _h(email.strip().lower()),
                                     "id_archivo": os.path.basename(id_archivo) if id_archivo else "Desconocido",
                                     "id_servicio": id_servicio,
                                     "cedula": f"***{cedula[-3:]}" if len(cedula) >= 3 else "***",
-                                    "cedula_hash": hashlib.sha256(cedula.strip().encode()).hexdigest() if cedula else "",
+                                    "cedula_hash": _h(cedula.strip()),
                                     "estado": "error",
                                     "detalles": "Datos obligatorios incompletos en fila CSV"
                                 })
@@ -272,11 +282,11 @@ class WorkflowOrchestrator:
                                     on_log(f"✗ SEGURIDAD: Path traversal bloqueado para {mask_email(email)}")
                                 batch_record["envios"].append({
                                     "email": mask_email(email),
-                                    "email_hash": hashlib.sha256(email.strip().lower().encode()).hexdigest() if email else "",
+                                    "email_hash": _h(email.strip().lower()),
                                     "id_archivo": id_archivo,
                                     "id_servicio": id_servicio,
                                     "cedula": f"***{cedula[-3:]}" if len(cedula) >= 3 else "***",
-                                    "cedula_hash": hashlib.sha256(cedula.strip().encode()).hexdigest() if cedula else "",
+                                    "cedula_hash": _h(cedula.strip()),
                                     "estado": "error",
                                     "detalles": err_msg
                                 })
@@ -301,11 +311,11 @@ class WorkflowOrchestrator:
                                 
                                 batch_record["envios"].append({
                                     "email": mask_email(email),
-                                    "email_hash": hashlib.sha256(email.strip().lower().encode()).hexdigest() if email else "",
+                                    "email_hash": _h(email.strip().lower()),
                                     "id_archivo": id_archivo,
                                     "id_servicio": id_servicio,
                                     "cedula": f"***{cedula[-3:]}" if len(cedula) >= 3 else "***",
-                                    "cedula_hash": hashlib.sha256(cedula.strip().encode()).hexdigest() if cedula else "",
+                                    "cedula_hash": _h(cedula.strip()),
                                     "estado": "error",
                                     "detalles": err_msg
                                 })
@@ -335,11 +345,11 @@ class WorkflowOrchestrator:
                                 
                                 batch_record["envios"].append({
                                     "email": mask_email(email),
-                                    "email_hash": hashlib.sha256(email.strip().lower().encode()).hexdigest() if email else "",
+                                    "email_hash": _h(email.strip().lower()),
                                     "id_archivo": id_archivo,
                                     "id_servicio": id_servicio,
                                     "cedula": f"***{cedula[-3:]}" if len(cedula) >= 3 else "***",
-                                    "cedula_hash": hashlib.sha256(cedula.strip().encode()).hexdigest() if cedula else "",
+                                    "cedula_hash": _h(cedula.strip()),
                                     "estado": "exito",
                                     "detalles": None
                                 })
@@ -357,18 +367,18 @@ class WorkflowOrchestrator:
                                 
                                 batch_record["envios"].append({
                                     "email": mask_email(email),
-                                    "email_hash": hashlib.sha256(email.strip().lower().encode()).hexdigest() if email else "",
+                                    "email_hash": _h(email.strip().lower()),
                                     "id_archivo": id_archivo,
                                     "id_servicio": id_servicio,
                                     "cedula": f"***{cedula[-3:]}" if len(cedula) >= 3 else "***",
-                                    "cedula_hash": hashlib.sha256(cedula.strip().encode()).hexdigest() if cedula else "",
+                                    "cedula_hash": _h(cedula.strip()),
                                     "estado": "error",
                                     "detalles": err_msg
                                 })
                         finally:
-                            # Ejecución asíncrona de borrado seguro anti-forense
+                            # Borrado seguro síncrono (previene archivos huérfanos al cerrar la app)
                             if os.path.exists(temp_pdf):
-                                threading.Thread(target=PDFCrypto.secure_cleanup, args=(temp_pdf,), daemon=True).start()
+                                PDFCrypto.secure_cleanup(temp_pdf)
                         
                         with lock:
                             completed_count[0] += 1
