@@ -82,7 +82,6 @@ DOMAIN_NAME_TYPOS = {
     "yhaoo": "yahoo",
     "yahhoo": "yahoo",
     "yaboo": "yahoo",
-    "yahho": "yahoo",
     # Ymail (Yahoo)
     "ymial": "ymail",
     "ymall": "ymail",

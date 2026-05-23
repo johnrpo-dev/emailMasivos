@@ -76,7 +76,7 @@ class EmailService:
         """Envía un correo con el archivo PDF adjunto."""
         try:
             if not self.user or not self.password:
-                raise ValueError("Las credenciales SMTP no están configuradas correctamente en el archivo .env")
+                raise ValueError("Las credenciales SMTP no están configuradas correctamente en el archivo de configuración.")
 
             # Crear mensaje
             msg = MIMEMultipart()

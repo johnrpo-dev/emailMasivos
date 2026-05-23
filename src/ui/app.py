@@ -5,6 +5,7 @@ import os
 import re
 import threading
 import subprocess
+import sys
 import secrets
 import hmac
 import hashlib
@@ -445,6 +446,8 @@ class App(ctk.CTk):
         Seguridad: Se sanitizan los parámetros para prevenir inyección de código PowerShell.
         Se eliminan caracteres peligrosos y se limita la longitud del texto.
         """
+        if sys.platform != "win32":
+            return
         try:
             # Seguridad (SEC-002): Lista blanca estricta de caracteres para prevenir command injection en PowerShell.
             # Se excluyen de forma garantizada comillas simples, dobles, backslashes y caracteres de escape.
@@ -885,8 +888,7 @@ class App(ctk.CTk):
                 # Búsqueda por coincidencia parcial para campos no sensibles o enmascarados
                 elif (query_lower in ev.get("email", "").lower() or 
                       query_lower in ev.get("id_archivo", "").lower() or 
-                      query_lower in ev.get("id_servicio", "").lower() or
-                      query_lower in ev.get("cedula", "").lower()):
+                      query_lower in ev.get("id_servicio", "").lower()):
                     is_match = True
                     
                 if is_match:

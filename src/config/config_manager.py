@@ -19,7 +19,7 @@ class ConfigManager:
             "smtp_host": "smtp.gmail.com",
             "smtp_port": 587,
             "email_subject": "Documento de {id_servicio}",
-            "email_body": "Estimado usuario,\n\nAdjunto encontrará su documento seguro. Para garantizar la máxima privacidad, este archivo ha sido cifrado con altos estándares de seguridad (AES-256).\n\nPara abrir el archivo, por favor use su número de documento de identidad (cédula) sin espacios ni puntos como contraseña.\n\nAtentamente,\nEl equipo."
+            "email_body": "Estimado usuario,\n\nAdjunto encontrará su documento seguro. Para garantizar la máxima privacidad, este archivo ha sido cifrado con altos estándares de seguridad (AES-256).\n\nPara abrir el archivo, por favor utilice su clave de seguridad asignada.\n\nAtentamente,\nEl equipo."
         }
         
         if not os.path.exists(ConfigManager.CONFIG_FILE):
