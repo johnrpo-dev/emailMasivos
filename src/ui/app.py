@@ -15,7 +15,8 @@ from src.core.workflow_orchestrator import WorkflowOrchestrator
 from src.ui.views.home_view import HomeView
 from src.ui.views.config_view import ConfigView
 from src.ui.views.history_view import HistoryView
-from src.ui.components.preview_modal import PreviewModal
+from src.ui.modals.preview_modal import PreviewModal
+from src.ui.modals.results_modal import ResultsModal
 
 class App(ctk.CTk):
     """Clase ventana principal coordinadora de navegación y estados globales de la sesión."""
@@ -262,67 +263,34 @@ class App(ctk.CTk):
             records_to_process=records_to_process
         )
         
+    def compute_search_hash(self, value: str) -> str:
+        """Calcula el hash seguro HMAC-SHA256 para búsquedas de PII en el historial."""
+        import hmac
+        import hashlib
+        return hmac.new(self._hmac_key, value.encode(), hashlib.sha256).hexdigest()
+
     def show_results_modal(self, errores, total, records_fallidos, email_corrections=None):
         if email_corrections is None:
             email_corrections = {}
             
-        modal = ctk.CTkToplevel(self)
-        modal.title("Reporte de Envíos")
-        modal.geometry("620x580")
-        modal.resizable(False, False)
-        modal.transient(self)
-        modal.grab_set()
-        modal.configure(fg_color=("#f8fafc", "#080c14"))
-        
-        def safe_close_modal():
-            try:
-                self.focus_set()
-                modal.destroy()
-            except Exception:
-                pass
+        def on_retry():
+            self._retry_count += 1
+            if self._retry_count > self.MAX_RETRIES:
+                messagebox.showwarning(
+                    "Límite Alcanzado",
+                    f"Se han alcanzado {self.MAX_RETRIES} reintentos máximos por seguridad.\n"
+                    f"Verifique manualmente los correos restantes antes de reiniciar."
+                )
+                return
                 
-        modal.protocol("WM_DELETE_WINDOW", safe_close_modal)
-        
-        lbl_title = ctk.CTkLabel(modal, text="Atención Requerida", font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold"), text_color=("#d97706", "#fbbf24"))
-        lbl_title.pack(pady=(25, 10))
-        
-        exitosos = total - len(errores)
-        
-        card_summary = ctk.CTkFrame(modal, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
-        card_summary.pack(fill="x", padx=30, pady=(10, 15), ipady=10)
-        
-        lbl_total = ctk.CTkLabel(card_summary, text=f"Total: {total}", font=self.font_label, text_color=("#475569", "#cbd5e1"))
-        lbl_total.pack(side="left", expand=True)
-        lbl_success = ctk.CTkLabel(card_summary, text=f"Éxitos: {exitosos}", font=self.font_label, text_color=("#10b981", "#34d399"))
-        lbl_success.pack(side="left", expand=True)
-        lbl_err = ctk.CTkLabel(card_summary, text=f"Errores: {len(errores)}", font=self.font_label, text_color=("#ef4444", "#f87171"))
-        lbl_err.pack(side="left", expand=True)
-        
-        if email_corrections:
-            card_fix = ctk.CTkFrame(modal, corner_radius=12, fg_color=("#fef3c7", "#291505"), border_width=1, border_color=("#f59e0b", "#d97706"))
-            card_fix.pack(fill="x", padx=30, pady=(0, 10), ipady=5)
-            fix_count = len(email_corrections)
-            lbl_fix = ctk.CTkLabel(
-                card_fix, 
-                text=f"Se detectaron {fix_count} correo(s) con errores corregibles automáticamente.",
-                font=self.font_text, text_color=("#92400e", "#fde047")
+            self.home_panel.btn_start.configure(state="disabled", fg_color="#4b5563")
+            self.home_panel.progress_bar.set(0)
+            self.home_panel.lbl_status.configure(
+                text=f"Reintentando {len(records_fallidos)} envios fallidos... (Intento {self._retry_count}/{self.MAX_RETRIES})"
             )
-            lbl_fix.pack(padx=15, pady=8)
-            
-        txt_errors = ctk.CTkTextbox(modal, width=560, height=200, font=self.font_text, corner_radius=12, fg_color=("#f8fafc", "#070a13"), text_color=("#334155", "#cbd5e1"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
-        txt_errors.pack(pady=10, padx=30)
-        
-        report_text = "--- REPORTE DE ERRORES ---\n\n"
-        report_text += "\n".join(errores)
-        txt_errors.insert("0.0", report_text)
-        txt_errors.configure(state="disabled")
-        
-        def copy_to_clipboard():
-            self.clipboard_clear()
-            self.clipboard_append(report_text)
-            messagebox.showinfo("Copiado", "El reporte ha sido copiado al portapapeles.", parent=modal)
-            
-        def correct_and_retry():
+            self._execute_workflow(records_fallidos)
+
+        def on_correct_and_retry():
             corrected_records = []
             remaining_records = []
             
@@ -337,15 +305,9 @@ class App(ctk.CTk):
                     remaining_records.append(record)
                     
             if not corrected_records:
-                messagebox.showinfo("Info", "No hay correcciones para aplicar.", parent=modal)
+                messagebox.showinfo("Info", "No hay correcciones para aplicar.")
                 return
                 
-            btn_correct.configure(state="disabled", text="Corrigiendo...", fg_color="#4b5563")
-            btn_copy.configure(state="disabled")
-            if records_fallidos:
-                btn_retry.configure(state="disabled")
-            lbl_title.configure(text="Aplicando correcciones...", text_color="gray")
-            
             all_records_to_retry = corrected_records + remaining_records
             
             self.home_panel.btn_start.configure(state="disabled", fg_color="#4b5563")
@@ -353,58 +315,19 @@ class App(ctk.CTk):
             self.home_panel.lbl_status.configure(text=f"Reenviando {len(all_records_to_retry)} registro(s)...")
             
             self._execute_workflow(all_records_to_retry)
-            safe_close_modal()
-            
-        def retry_failed():
-            self._retry_count += 1
-            if self._retry_count > self.MAX_RETRIES:
-                messagebox.showwarning(
-                    "Límite Alcanzado",
-                    f"Se han alcanzado {self.MAX_RETRIES} reintentos máximos por seguridad.\n"
-                    f"Verifique manualmente los correos restantes antes de reiniciar.",
-                    parent=modal
-                )
-                return
-                
-            btn_retry.configure(state="disabled", text="Reintentando...", fg_color="#4b5563")
-            btn_copy.configure(state="disabled")
-            if email_corrections:
-                btn_correct.configure(state="disabled")
-            lbl_title.configure(text="Reintentando envios...", text_color="gray")
-            
-            self.home_panel.btn_start.configure(state="disabled", fg_color="#4b5563")
-            self.home_panel.progress_bar.set(0)
-            self.home_panel.lbl_status.configure(text=f"Reintentando {len(records_fallidos)} envios fallidos... (Intento {self._retry_count}/{self.MAX_RETRIES})")
-            
-            self._execute_workflow(records_fallidos)
-            safe_close_modal()
-            
-        btn_frame = ctk.CTkFrame(modal, fg_color="transparent")
-        btn_frame.pack(pady=(15, 10), fill="x", padx=30)
-        
-        btn_copy = ctk.CTkButton(btn_frame, text="Copiar Reporte", command=copy_to_clipboard, width=140, height=45, corner_radius=12, fg_color=("#4b5563", "#374151"), hover_color=("#374151", "#1f2937"))
-        btn_copy.pack(side="left", padx=5, expand=True)
-        
-        if email_corrections:
-            btn_correct = ctk.CTkButton(
-                btn_frame, text="Corregir y Reintentar", command=correct_and_retry,
-                width=180, height=45, corner_radius=12,
-                font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
-                fg_color=("#10b981", "#059669"), hover_color=("#059669", "#047857"), text_color="white"
-            )
-            btn_correct.pack(side="left", padx=5, expand=True)
-            
-        if records_fallidos:
-            btn_retry = ctk.CTkButton(btn_frame, text="Reintentar Fallidos", command=retry_failed, width=160, height=45, corner_radius=12, font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"), fg_color=("#f59e0b", "#d97706"), hover_color=("#d97706", "#b45309"), text_color="white")
-            btn_retry.pack(side="right", padx=5, expand=True)
+
+        ResultsModal(
+            self, errores, total, records_fallidos, email_corrections,
+            on_retry=on_retry, on_correct_and_retry=on_correct_and_retry
+        )
             
     def show_desktop_notification(self, title, message):
         """Muestra una notificación de escritorio en Windows usando PowerShell nativo."""
         if sys.platform != "win32":
             return
         try:
-            safe_title = re.sub(r"[^a-zA-Z0-9 .,!#@:_\-]", "", title)[:100]
-            safe_message = re.sub(r"[^a-zA-Z0-9 .,!#@:_\-/]", "", message)[:250]
+            safe_title = re.sub(r"[^a-zA-Z0-9áéíóúüñÁÉÍÓÚÜÑ .,!#@:_\-]", "", title)[:100]
+            safe_message = re.sub(r"[^a-zA-Z0-9áéíóúüñÁÉÍÓÚÜÑ .,!#@:_\-/]", "", message)[:250]
             
             ps_code = (
                 '[void][System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms");'

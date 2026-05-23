@@ -1,6 +1,6 @@
 import customtkinter as ctk
 
-class HistoryDetailModal(ctk.CTkToplevel):
+class LoteModal(ctk.CTkToplevel):
     """Modal premium con la lista detallada de envíos en un lote anterior."""
     def __init__(self, parent, lote_id, lote_data):
         super().__init__(parent)
@@ -42,7 +42,7 @@ class HistoryDetailModal(ctk.CTkToplevel):
         envios_scroll = ctk.CTkScrollableFrame(self, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
         envios_scroll.pack(fill="both", expand=True, padx=30, pady=10)
         
-        envios = lote_data.get('envios', [])
+        envios = list(lote_data.get('envios', []))  # Usamos copia superficial para seguridad
         if not envios:
             ctk.CTkLabel(envios_scroll, text="No hay registros individuales para este lote.", font=self.font_status, text_color=("#64748b", "#94a3b8")).pack(pady=40)
         else:

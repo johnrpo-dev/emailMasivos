@@ -32,9 +32,38 @@ Este documento registra el estado de las mejoras identificadas y desarrolladas p
 *   **Solución:** Extracción completa de la lógica de cifrado, SMTP, pre-validación de correos y pool de hilos (`ThreadPoolExecutor`) hacia el componente orquestador `WorkflowOrchestrator`. La interfaz gráfica en `app.py` actúa como una vista pura y actualiza sus controles mediante llamadas seguras e independientes de hilos (`self.after(0, ...)`).
 
 ---
-*Última actualización: 2026-05-22*
+*Última actualización: 2026-05-23*
 
+## 🚀 Mejoras Estructurales y de Estabilidad (Sprint 3)
+¡Todas las tareas arquitectónicas y de estabilidad del Sprint 3 han sido completadas con éxito!
 
+### 1. Extracción de `show_results_modal`
+*   **Estado:** `[Completado]`
+*   **Solución:** Se extrajo el diálogo a una clase pura e independiente `ResultsModal` en `src/ui/modals/results_modal.py`, comunicándose de forma desacoplada con el controller principal usando callbacks.
+
+### 2. Estandarización a Carpeta de Modales (`modals/`)
+*   **Estado:** `[Completado]`
+*   **Solución:** Se agruparon todos los diálogos en el directorio semánticamente correcto `src/ui/modals/`, removiendo la carpeta `components/`.
+
+### 3. Homologación de Nombres (`lote_modal.py`)
+*   **Estado:** `[Completado]`
+*   **Solución:** Se renombró `history_detail_modal.py` a `lote_modal.py` para coincidir semánticamente con la definición del diseño propuesto.
+
+### 4. Minimización de `app.py`
+*   **Estado:** `[Completado]`
+*   **Solución:** Limpieza de clases auxiliares de `app.py`, reduciendo su tamaño a escasas **225 líneas** y limitando su responsabilidad únicamente al enrutamiento de vistas y ciclo de vida.
+
+### 5. Sanitización Robustecida de Nombres de Archivos
+*   **Estado:** `[Completado]`
+*   **Solución:** Modificación del regex de sanitización en el orquestador a `r'[^\w.\- ]'` permitiendo procesar archivos con espacios en blanco en su nombre de forma normal.
+
+### 6. Localización e Integridad de Notificaciones
+*   **Estado:** `[Completado]`
+*   **Solución:** Ampliación del set de sanitización de notificaciones para admitir caracteres acentuados del español y la letra "ñ" (`áéíóúüñÁÉÍÓÚÜÑ`), asegurando la correcta ortografía en las alertas de Windows.
+
+### 7. Prevención de Concurrencia en Historial
+*   **Estado:** `[Completado]`
+*   **Solución:** Aplicación de copias superficiales rápidas `list(lote.get("envios", []))` al iterar en caliente sobre el historial desde el hilo principal de la interfaz visual, anulando riesgos de `RuntimeError` por modificaciones paralelas.
 
 ******************************************************************
 

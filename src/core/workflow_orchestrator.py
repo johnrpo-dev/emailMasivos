@@ -314,7 +314,7 @@ class WorkflowOrchestrator:
                 
                 # Seguridad: Sanitizar id_archivo contra ataques de path traversal
                 id_archivo = os.path.basename(id_archivo)
-                id_archivo = re.sub(r'[^\w.\-]', '_', id_archivo)
+                id_archivo = re.sub(r'[^\w.\- ]', '_', id_archivo)
                 if not id_archivo.lower().endswith(".pdf"):
                     id_archivo += ".pdf"
                 

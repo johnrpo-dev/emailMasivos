@@ -1,7 +1,5 @@
 import customtkinter as ctk
-import hmac
-import hashlib
-from src.ui.components.history_detail_modal import HistoryDetailModal
+from src.ui.modals.lote_modal import LoteModal
 
 class HistoryView(ctk.CTkFrame):
     """Componente modular de la vista de Historial de Auditoría con buscador HMAC."""
@@ -109,7 +107,7 @@ class HistoryView(ctk.CTkFrame):
             btn_details.grid(row=0, column=2, padx=20, pady=10)
 
     def show_lote_details_modal(self, lote_id, lote_data):
-        HistoryDetailModal(self.controller, lote_id, lote_data)
+        LoteModal(self.controller, lote_id, lote_data)
 
     def perform_history_search(self):
         query = self.search_query.get().strip()
@@ -123,12 +121,13 @@ class HistoryView(ctk.CTkFrame):
         query_strip = query.strip()
         query_lower = query_strip.lower()
         
-        query_email_hash = hmac.new(self.controller._hmac_key, query_lower.encode(), hashlib.sha256).hexdigest()
-        query_cedula_hash = hmac.new(self.controller._hmac_key, query_strip.encode(), hashlib.sha256).hexdigest()
+        query_email_hash = self.controller.compute_search_hash(query_lower)
+        query_cedula_hash = self.controller.compute_search_hash(query_strip)
         
         results = []
         for lote in self.controller.session_batches:
-            for ev in lote.get("envios", []):
+            # Usamos list() para una copia superficial segura contra modificaciones concurrentes del ThreadPool
+            for ev in list(lote.get("envios", [])):
                 is_match = False
                 if query_email_hash == ev.get("email_hash"):
                     is_match = True
