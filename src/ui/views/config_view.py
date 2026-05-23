@@ -1,0 +1,68 @@
+import customtkinter as ctk
+from tkinter import messagebox
+from src.config.config_manager import ConfigManager
+
+class ConfigView(ctk.CTkFrame):
+    """Componente vista de Configuración SMTP modular."""
+    def __init__(self, parent, controller):
+        super().__init__(parent, fg_color="transparent")
+        self.controller = controller
+        
+        # Tipografías del controller
+        self.font_title = controller.font_title
+        self.font_label = controller.font_label
+        self.font_text = controller.font_text
+        
+        self.setup_layout()
+        
+    def setup_layout(self):
+        lbl_title = ctk.CTkLabel(self, text="Ajustes de Servidor SMTP", font=self.font_title, text_color=("#0f172a", "#f8fafc"))
+        lbl_title.pack(anchor="w", pady=(0, 2))
+        
+        lbl_subtitle = ctk.CTkLabel(self, text="Configure las credenciales SMTP de su proveedor y la plantilla de correo", font=ctk.CTkFont(family="Segoe UI", size=13), text_color=("#64748b", "#94a3b8"))
+        lbl_subtitle.pack(anchor="w", pady=(0, 20))
+        
+        # Card Credenciales
+        card_creds = ctk.CTkFrame(self, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+        card_creds.pack(fill="x", pady=(0, 20), ipady=5)
+        card_creds.grid_columnconfigure(1, weight=1)
+        
+        ctk.CTkLabel(card_creds, text="Correo Remitente:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=0, column=0, padx=20, pady=(20, 10), sticky="w")
+        ctk.CTkEntry(card_creds, textvariable=self.controller.config_user, font=self.font_text, height=36, fg_color=("#f8fafc", "#070a13"), border_color=("#cbd5e1", "#1e293b"), placeholder_text="ej. ventas@empresa.com").grid(row=0, column=1, padx=20, pady=(20, 10), sticky="ew")
+        
+        ctk.CTkLabel(card_creds, text="Código de App:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=1, column=0, padx=20, pady=(0, 10), sticky="w")
+        ctk.CTkEntry(card_creds, textvariable=self.controller.config_pass, show="*", font=self.font_text, height=36, fg_color=("#f8fafc", "#070a13"), border_color=("#cbd5e1", "#1e293b"), placeholder_text="Contraseña de 16 caracteres").grid(row=1, column=1, padx=20, pady=(0, 10), sticky="ew")
+        
+        ctk.CTkLabel(card_creds, text="Proveedor de Correo:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=2, column=0, padx=20, pady=(0, 20), sticky="w")
+        provider_menu = ctk.CTkOptionMenu(card_creds, variable=self.controller.config_provider, values=list(self.controller.smtp_providers.keys()), font=self.font_text, height=36, fg_color=("#4f46e5", "#6366f1"), button_color=("#4338ca", "#4f46e5"), button_hover_color=("#3730a3", "#4338ca"))
+        provider_menu.grid(row=2, column=1, padx=20, pady=(0, 20), sticky="w")
+
+        # Card Plantilla
+        card_tpl = ctk.CTkFrame(self, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+        card_tpl.pack(fill="both", expand=True, pady=(0, 20))
+        card_tpl.grid_columnconfigure(1, weight=1)
+        card_tpl.grid_rowconfigure(1, weight=1)
+        
+        ctk.CTkLabel(card_tpl, text="Asunto del Correo:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=0, column=0, padx=20, pady=(20, 10), sticky="w")
+        ctk.CTkEntry(card_tpl, textvariable=self.controller.config_subject, font=self.font_text, height=36, fg_color=("#f8fafc", "#070a13"), border_color=("#cbd5e1", "#1e293b")).grid(row=0, column=1, padx=20, pady=(20, 10), sticky="ew")
+        
+        ctk.CTkLabel(card_tpl, text="Cuerpo del Correo:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=1, column=0, padx=20, pady=(0, 20), sticky="nw")
+        self.txt_body = ctk.CTkTextbox(card_tpl, font=self.font_text, fg_color=("#f8fafc", "#070a13"), border_color=("#cbd5e1", "#1e293b"), border_width=1, corner_radius=10)
+        self.txt_body.grid(row=1, column=1, padx=20, pady=(0, 20), sticky="nsew")
+        self.txt_body.insert("0.0", self.controller.initial_body)
+        
+        btn_save = ctk.CTkButton(self, text="💾 Guardar Configuración", font=ctk.CTkFont(family="Segoe UI", size=15, weight="bold"), fg_color=("#4f46e5", "#6366f1"), hover_color=("#4338ca", "#4f46e5"), height=48, corner_radius=12, command=self.save_settings)
+        btn_save.pack(pady=0, fill="x")
+        
+    def save_settings(self):
+        body = self.txt_body.get("0.0", "end").strip()
+        provider = self.controller.smtp_providers.get(self.controller.config_provider.get(), {"host": "smtp.gmail.com", "port": 587})
+        success = ConfigManager.save_config(
+            self.controller.config_user.get(), self.controller.config_pass.get(),
+            provider["host"], str(provider["port"]),
+            self.controller.config_subject.get(), body
+        )
+        if success:
+            messagebox.showinfo("Éxito", "Configuración guardada correctamente.")
+        else:
+            messagebox.showerror("Error", "No se pudo guardar la configuración.")

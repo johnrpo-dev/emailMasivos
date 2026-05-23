@@ -1,0 +1,84 @@
+import customtkinter as ctk
+
+class HistoryDetailModal(ctk.CTkToplevel):
+    """Modal premium con la lista detallada de envíos en un lote anterior."""
+    def __init__(self, parent, lote_id, lote_data):
+        super().__init__(parent)
+        
+        self.title(f"Detalle de Envío - Lote #{lote_id}")
+        self.geometry("750x580")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.grab_set()
+        self.configure(fg_color=("#f8fafc", "#080c14"))
+        
+        # Tipografías base
+        self.font_label = ctk.CTkFont(family="Segoe UI", size=14, weight="bold")
+        self.font_text = ctk.CTkFont(family="Segoe UI", size=13)
+        self.font_status = ctk.CTkFont(family="Segoe UI", size=14, slant="italic")
+        
+        # Título
+        lbl_title = ctk.CTkLabel(
+            self, text=f"Detalle del Lote #{lote_id}", 
+            font=ctk.CTkFont(family="Segoe UI", size=20, weight="bold"), 
+            text_color=("#0f172a", "#f8fafc")
+        )
+        lbl_title.pack(pady=(20, 5))
+        
+        # Tarjeta de datos del lote con estética premium
+        info_frame = ctk.CTkFrame(self, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+        info_frame.pack(fill="x", padx=30, pady=10, ipady=5)
+        
+        info_str = f"Archivo: {lote_data['csv_nombre']}   |   Fecha: {lote_data['fecha']}"
+        ctk.CTkLabel(info_frame, text=info_str, font=self.font_text, text_color=("#334155", "#cbd5e1")).pack(pady=5)
+        
+        stats_str = f"Total Registros: {lote_data['total_registros']}   -   Exitosos: {lote_data['exitosos']}   -   Fallidos: {lote_data['fallidos']}"
+        ctk.CTkLabel(
+            info_frame, text=stats_str, font=self.font_label, 
+            text_color=("#4f46e5", "#818cf8")
+        ).pack(pady=(0, 5))
+        
+        # Scrollable Frame con los envíos del lote
+        envios_scroll = ctk.CTkScrollableFrame(self, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+        envios_scroll.pack(fill="both", expand=True, padx=30, pady=10)
+        
+        envios = lote_data.get('envios', [])
+        if not envios:
+            ctk.CTkLabel(envios_scroll, text="No hay registros individuales para este lote.", font=self.font_status, text_color=("#64748b", "#94a3b8")).pack(pady=40)
+        else:
+            for ev in envios:
+                row_frame = ctk.CTkFrame(envios_scroll, corner_radius=12, fg_color=("#f8fafc", "#070a13"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+                row_frame.pack(fill="x", pady=4, padx=5, ipady=3)
+                row_frame.grid_columnconfigure(0, weight=1)
+                
+                # Datos de registro
+                email = ev['email']
+                cedula = ev['cedula']
+                id_archivo = ev['id_archivo']
+                id_servicio = ev['id_servicio']
+                estado = ev['estado']
+                detalles = ev['detalles']
+                
+                desc = f"Email: {email}\nID: {cedula} | Servicio: {id_servicio} | Archivo: {id_archivo}"
+                lbl_desc = ctk.CTkLabel(row_frame, text=desc, font=self.font_text, justify="left", anchor="w", text_color=("#334155", "#cbd5e1"))
+                lbl_desc.grid(row=0, column=0, padx=15, pady=8, sticky="w")
+                
+                # Etiqueta Estado estilizada
+                if estado == "exito":
+                    lbl_est = ctk.CTkLabel(row_frame, text="EXITOSO", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color="white", fg_color="#10b981", corner_radius=6, width=90, height=26)
+                else:
+                    lbl_est = ctk.CTkLabel(row_frame, text="FALLIDO", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color="white", fg_color="#ef4444", corner_radius=6, width=90, height=26)
+                lbl_est.grid(row=0, column=1, padx=15, pady=8, sticky="e")
+                
+                # Detalles del error
+                if detalles:
+                    lbl_det = ctk.CTkLabel(row_frame, text=f"Detalle: {detalles}", font=ctk.CTkFont(family="Segoe UI", size=11, slant="italic"), text_color=("#ef4444", "#f87171"), justify="left", anchor="w")
+                    lbl_det.grid(row=1, column=0, columnspan=2, padx=15, pady=(0, 8), sticky="w")
+                    
+        # Botón para cerrar modal
+        btn_close = ctk.CTkButton(
+            self, text="Cerrar", font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"), 
+            width=140, height=42, fg_color=("#4b5563", "#374151"), hover_color=("#374151", "#1f2937"), 
+            command=self.destroy
+        )
+        btn_close.pack(pady=15)
