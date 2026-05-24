@@ -35,7 +35,7 @@ def load_or_create_keys():
             f.write(
                 private_key.private_bytes(
                     encoding=serialization.Encoding.PEM,
-                    format=serialization.PrivateFormat.OpenSSH,
+                    format=serialization.PrivateFormat.PKCS8,
                     encryption_algorithm=serialization.NoEncryption()
                 )
             )

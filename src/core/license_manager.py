@@ -7,7 +7,7 @@ from src.utils.logger import logger
 
 class LicenseManager:
     SERVICE_NAME = "SEMS_Pro_Licensing"
-    PUBLIC_KEY_HEX = "920b0b5be45bb7f53c916997efc2605a5540081fcf784676158331e559d821d3"
+    PUBLIC_KEY_HEX = "caf90aeba6174a24891e0da1c366052e88fb3a60b28aa1c80301aab1856bd7b6"
 
     @staticmethod
     def verify_signature(license_base64: str) -> dict:
@@ -17,6 +17,11 @@ class LicenseManager:
                 bytes.fromhex(LicenseManager.PUBLIC_KEY_HEX)
             )
             
+            # Asegurar que el relleno Base64 sea correcto ante posibles pérdidas en copiar/pegar
+            missing_padding = len(license_base64) % 4
+            if missing_padding:
+                license_base64 += '=' * (4 - missing_padding)
+                
             # Decodificar el token Base64
             license_json = base64.b64decode(license_base64.encode('utf-8')).decode('utf-8')
             license_data = json.loads(license_json)
