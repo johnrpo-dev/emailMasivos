@@ -1,6 +1,7 @@
 import customtkinter as ctk
 from tkinter import messagebox
 from src.config.config_manager import ConfigManager
+from src.utils.logger import mask_email
 
 class ConfigView(ctk.CTkFrame):
     """Componente vista de Configuración SMTP modular."""
@@ -28,7 +29,10 @@ class ConfigView(ctk.CTkFrame):
         card_creds.grid_columnconfigure(1, weight=1)
         
         ctk.CTkLabel(card_creds, text="Correo Remitente:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=0, column=0, padx=20, pady=(20, 10), sticky="w")
-        ctk.CTkEntry(card_creds, textvariable=self.controller.config_user, font=self.font_text, height=36, fg_color=("#f8fafc", "#070a13"), border_color=("#cbd5e1", "#1e293b"), placeholder_text="ej. ventas@empresa.com").grid(row=0, column=1, padx=20, pady=(20, 10), sticky="ew")
+        self.entry_user = ctk.CTkEntry(card_creds, textvariable=self.controller.config_user, font=self.font_text, height=36, fg_color=("#f8fafc", "#070a13"), border_color=("#cbd5e1", "#1e293b"), placeholder_text="ej. ventas@empresa.com")
+        self.entry_user.grid(row=0, column=1, padx=20, pady=(20, 10), sticky="ew")
+        self.entry_user.bind("<FocusIn>", self.on_focus_in)
+        self.entry_user.bind("<FocusOut>", self.on_focus_out)
         
         ctk.CTkLabel(card_creds, text="Código de App:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=1, column=0, padx=20, pady=(0, 10), sticky="w")
         ctk.CTkEntry(card_creds, textvariable=self.controller.config_pass, show="*", font=self.font_text, height=36, fg_color=("#f8fafc", "#070a13"), border_color=("#cbd5e1", "#1e293b"), placeholder_text="Contraseña de 16 caracteres").grid(row=1, column=1, padx=20, pady=(0, 10), sticky="ew")
@@ -54,15 +58,29 @@ class ConfigView(ctk.CTkFrame):
         btn_save = ctk.CTkButton(self, text="💾 Guardar Configuración", font=ctk.CTkFont(family="Segoe UI", size=15, weight="bold"), fg_color=("#4f46e5", "#6366f1"), hover_color=("#4338ca", "#4f46e5"), height=48, corner_radius=12, command=self.save_settings)
         btn_save.pack(pady=0, fill="x")
         
+    def on_focus_in(self, event):
+        self.controller.config_user.set(self.controller._real_smtp_user)
+
+    def on_focus_out(self, event):
+        val = self.controller.config_user.get().strip()
+        if val and "***" not in val:
+            self.controller._real_smtp_user = val
+        self.controller.config_user.set(mask_email(self.controller._real_smtp_user))
+
     def save_settings(self):
+        val = self.controller.config_user.get().strip()
+        if val and "***" not in val:
+            self.controller._real_smtp_user = val
+            
         body = self.txt_body.get("0.0", "end").strip()
         provider = self.controller.smtp_providers.get(self.controller.config_provider.get(), {"host": "smtp.gmail.com", "port": 587})
         success = ConfigManager.save_config(
-            self.controller.config_user.get(), self.controller.config_pass.get(),
+            self.controller._real_smtp_user, self.controller.config_pass.get(),
             provider["host"], str(provider["port"]),
             self.controller.config_subject.get(), body
         )
         if success:
             messagebox.showinfo("Éxito", "Configuración guardada correctamente.")
+            self.controller.config_user.set(mask_email(self.controller._real_smtp_user))
         else:
             messagebox.showerror("Error", "No se pudo guardar la configuración.")

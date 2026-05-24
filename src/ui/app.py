@@ -10,7 +10,7 @@ import tempfile
 import glob
 import atexit
 from src.config.config_manager import ConfigManager
-from src.utils.logger import logger
+from src.utils.logger import logger, mask_email
 from src.core.workflow_orchestrator import WorkflowOrchestrator
 from src.ui.views.home_view import HomeView
 from src.ui.views.config_view import ConfigView
@@ -45,6 +45,7 @@ class App(ctk.CTk):
         self.pdf_dir = ctk.StringVar(value=default_pdf_dir)
         
         # Variables de Configuración
+        self._real_smtp_user = ""
         self.config_user = ctk.StringVar()
         self.config_pass = ctk.StringVar()
         self.config_subject = ctk.StringVar()
@@ -75,7 +76,8 @@ class App(ctk.CTk):
         
     def load_settings(self):
         config = ConfigManager.get_config()
-        self.config_user.set(config.get("smtp_user", ""))
+        self._real_smtp_user = config.get("smtp_user", "")
+        self.config_user.set(mask_email(self._real_smtp_user))
         self.config_pass.set(config.get("smtp_password", ""))
         self.config_subject.set(config.get("email_subject", ""))
         self.initial_body = config.get("email_body", "")
@@ -190,7 +192,7 @@ class App(ctk.CTk):
         if not self.csv_path.get():
             messagebox.showwarning("Atención", "Selecciona primero el archivo CSV de datos.")
             return
-        PreviewModal(self, self.csv_path.get(), self.config_user.get())
+        PreviewModal(self, self.csv_path.get())
         
     def start_process(self):
         """Prepara e inicia la orquestación del proceso en segundo plano."""

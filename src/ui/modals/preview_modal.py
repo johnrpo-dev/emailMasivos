@@ -6,7 +6,7 @@ from src.utils.logger import mask_email
 
 class PreviewModal(ctk.CTkToplevel):
     """Modal de Vista Previa de Correo desacoplado de la ventana coordinadora."""
-    def __init__(self, parent, csv_path_str, remitente_email):
+    def __init__(self, parent, csv_path_str):
         super().__init__(parent)
         
         self.title("Vista Previa de Correo")
