@@ -14,3 +14,8 @@ data/*.db
 scratch_*.txt
 # Llaves de firma privadas/públicas del proveedor (SEC-LIC)
 *.pem
+
+# Scripts privados administrativos del proveedor (SEC-LIC)
+generar_licencia.py
+reset_licencia.py
+

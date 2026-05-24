@@ -1,6 +1,7 @@
 import customtkinter as ctk
 from tkinter import messagebox
 import sys
+from datetime import datetime
 from src.core.license_manager import LicenseManager
 
 class ActivationModal(ctk.CTk):
@@ -116,4 +117,3 @@ class ActivationModal(ctk.CTk):
                 sys.exit(0)
         else:
             self.destroy()
-from datetime import datetime
