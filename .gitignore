@@ -12,3 +12,5 @@ data/output/
 data/*.db
 *.db
 scratch_*.txt
+# Llaves de firma privadas/públicas del proveedor (SEC-LIC)
+*.pem

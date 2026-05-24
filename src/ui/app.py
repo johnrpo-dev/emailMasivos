@@ -234,6 +234,9 @@ class App(ctk.CTk):
         def on_complete(errores, total, records_fallidos, email_corrections):
             def _complete():
                 try:
+                    from src.core.license_manager import LicenseManager
+                    LicenseManager.update_last_run()
+                    
                     exitosos_total = total - len(errores)
                     self.home_panel.update_ui_status("¡Proceso masivo completado!", 1.0)
                     self.home_panel.add_console_log(f"✓ COMPLETADO: {exitosos_total} exitosos, {len(errores)} fallidos.")
