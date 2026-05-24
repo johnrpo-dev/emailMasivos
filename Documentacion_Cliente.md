@@ -1,5 +1,5 @@
 # SEMS Pro — Sistema de Envío Masivo Seguro
-### Ficha Técnica y Comercial — v2.0
+### Ficha Técnica y Comercial — v2.1
 
 ---
 
@@ -9,7 +9,7 @@
 
 Su diseño permite que un operador sin conocimientos técnicos envíe cientos o miles de documentos PDF protegidos individualmente, garantizando que solo el destinatario legítimo pueda abrir su archivo.
 
-> **Propuesta de Valor:** Elimina el riesgo legal y operativo de enviar información sensible por correo electrónico sin protección, cumpliendo con la **Ley 1581 de 2012 (Habeas Data)** y estándares internacionales de cifrado.
+> **Propuesta de Valor:** Elimina el riesgo legal y operativo de enviar información sensible por correo electrónico sin protección, cumpliendo estrictamente con la **Ley 1581 de 2012 (Habeas Data)** y estándares internacionales de cifrado.
 
 ---
 
@@ -47,18 +47,28 @@ La contraseña de cada PDF es la **cédula de identidad** del destinatario. Esto
 ### 🌐 Capa 4 — Canal de Transmisión Cifrado (TLS)
 La conexión entre el software y el servidor de correo se establece a través de un **túnel TLS** (Transport Layer Security), impidiendo que cualquier intermediario (proveedores de internet, redes Wi-Fi públicas) pueda leer los correos en tránsito.
 
-### 🧹 Capa 5 — Destrucción Segura de Archivos Temporales
-Una vez enviado cada correo, el sistema **sobrescribe los archivos temporales con datos aleatorios** antes de eliminarlos del disco. Esta técnica anti-forense garantiza que no queden rastros recuperables de los documentos procesados.
+### 🧹 Capa 5 — Destrucción Segura y Zero-Footprint (RAM)
+El sistema opera bajo un estricto modelo de **"Zero-Footprint"**. Los lotes e historiales de auditoría se conservan de manera efímera únicamente en la memoria RAM y se destruyen de forma irrevocable al cerrar la aplicación. Además, una vez enviado cada correo, el sistema **sobrescribe los archivos temporales con datos aleatorios de alta entropía** antes de eliminarlos físicamente del disco. Esta técnica anti-forense garantiza que no queden rastros recuperables de los documentos procesados en el almacenamiento persistente.
 
 ---
 
-## 4. Almacenamiento Seguro de Credenciales
+## 4. Enmascaramiento Activo de PII en Pantalla
+
+Para evitar la fuga de información sensible mediante capturas de pantalla involuntarias, espionaje físico ("shoulder surfing") o acceso no autorizado visual, SEMS Pro aplica un control dinámico de enmascaramiento en la interfaz de usuario:
+
+- **Vista Previa de Correo**: Oculta la dirección real de la cuenta de remitente del operador mostrando únicamente `"Cuenta SMTP configurada"`. Adicionalmente, enmascara la dirección del destinatario (ej. `johnsod8729@gmail.com` se muestra como `j***9@gmail.com`), garantizando el tratamiento de datos personales de terceros de conformidad con la Ley 1581 de 2012.
+- **Ajustes SMTP**: El campo "Correo Remitente" implementa un enmascaramiento dinámico interactivo. Al cargar la configuración o al perder el foco (`FocusOut`), el correo se muestra enmascarado. Al hacer clic o enfocar el campo para editarlo (`FocusIn`), se revela el correo real de forma temporal, permitiendo una gestión cómoda y segura.
+- **Búsqueda en Historial**: Toda búsqueda de registros y auditoría se gestiona a través de hashes criptográficos robustos **HMAC-SHA256**, evitando exponer datos PII en texto plano durante las consultas de auditoría.
+
+---
+
+## 5. Almacenamiento Seguro de Credenciales
 
 Las contraseñas de correo electrónico del administrador **no se guardan en archivos de texto** ni en bases de datos locales. SEMS Pro utiliza el **Administrador de Credenciales de Windows** (Windows Credential Manager), la misma bóveda de seguridad que utiliza el sistema operativo para proteger las contraseñas de inicio de sesión.
 
 ---
 
-## 5. Compatibilidad
+## 6. Compatibilidad
 
 | Característica | Detalle |
 |---|---|
@@ -70,7 +80,7 @@ Las contraseñas de correo electrónico del administrador **no se guardan en arc
 
 ---
 
-## 6. Tecnologías Certificadas
+## 7. Tecnologías Certificadas
 
 SEMS Pro ha sido desarrollado utilizando tecnologías de grado industrial:
 
@@ -79,23 +89,23 @@ SEMS Pro ha sido desarrollado utilizando tecnologías de grado industrial:
 | Motor de Cifrado | **AES-256 (PDF 2.0 / R6)** | Protección de documentos |
 | Transporte Seguro | **TLS 1.2+** | Cifrado del canal de comunicación |
 | Almacén de Credenciales | **Windows Credential Manager** | Protección de contraseñas del sistema |
-| Protección de Logs | **Ofuscación PII** | Cumplimiento de Habeas Data en registros internos |
+| Protección de Pantalla y Logs | **Ofuscación Activa de PII** | Enmascaramiento dinámico de correos en UI y archivos de log |
 | Limpieza de Datos | **Overwrite + Delete** | Destrucción anti-forense de archivos temporales |
 
 ---
 
-## 7. Cumplimiento Normativo
+## 8. Cumplimiento Normativo
 
 | Normativa | Cumplimiento |
 |---|---|
-| **Ley 1581 de 2012** (Habeas Data - Colombia) | ✅ Datos personales cifrados y protegidos |
-| **Ley 1273 de 2009** (Delitos Informáticos - Colombia) | ✅ Medidas técnicas de protección implementadas |
-| **Principio de Minimización de Datos** | ✅ Los logs internos enmascaran correos electrónicos |
-| **OWASP Top 10** | ✅ Validación de entrada, gestión segura de secretos |
+| **Ley 1581 de 2012** (Habeas Data - Colombia) | ✅ Datos personales cifrados y enmascarados activamente en pantalla e historial efímero sin almacenamiento persistente. |
+| **Ley 1273 de 2009** (Delitos Informáticos - Colombia) | ✅ Medidas técnicas de protección física y lógica implementadas. |
+| **Principio de Minimización de Datos** | ✅ Los logs e interfaces enmascaran de forma dinámica los correos electrónicos. |
+| **OWASP Top 10** | ✅ Validación estricta de entrada, mitigación de Path Traversal, gestión segura de secretos. |
 
 ---
 
-## 8. Soporte Técnico y Actualizaciones
+## 9. Soporte Técnico y Actualizaciones
 
 | Servicio | Detalle |
 |---|---|
@@ -106,7 +116,7 @@ SEMS Pro ha sido desarrollado utilizando tecnologías de grado industrial:
 
 ---
 
-## 9. Contacto
+## 10. Contacto
 
 **Desarrollado por:** John R.  
 **Correo:** johnsod8729@gmail.com  
