@@ -2,6 +2,7 @@ import customtkinter as ctk
 from tkinter import messagebox
 from src.core.data_manager import DataManager
 from src.config.config_manager import ConfigManager
+from src.utils.logger import mask_email
 
 class PreviewModal(ctk.CTkToplevel):
     """Modal de Vista Previa de Correo desacoplado de la ventana coordinadora."""
@@ -60,10 +61,10 @@ class PreviewModal(ctk.CTkToplevel):
         details_frame.grid_columnconfigure(1, weight=1)
         
         ctk.CTkLabel(details_frame, text="Remitente:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=0, column=0, padx=20, pady=8, sticky="w")
-        ctk.CTkLabel(details_frame, text=remitente_email, font=self.font_text, text_color=("#64748b", "#94a3b8")).grid(row=0, column=1, padx=20, pady=8, sticky="w")
+        ctk.CTkLabel(details_frame, text="Cuenta SMTP configurada", font=self.font_text, text_color=("#64748b", "#94a3b8")).grid(row=0, column=1, padx=20, pady=8, sticky="w")
         
         ctk.CTkLabel(details_frame, text="Destinatario:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=1, column=0, padx=20, pady=8, sticky="w")
-        ctk.CTkLabel(details_frame, text=email, font=self.font_text, text_color=("#4f46e5", "#818cf8")).grid(row=1, column=1, padx=20, pady=8, sticky="w")
+        ctk.CTkLabel(details_frame, text=mask_email(email), font=self.font_text, text_color=("#4f46e5", "#818cf8")).grid(row=1, column=1, padx=20, pady=8, sticky="w")
         
         ctk.CTkLabel(details_frame, text="Adjunto:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=2, column=0, padx=20, pady=8, sticky="w")
         ctk.CTkLabel(details_frame, text=f"{id_archivo} (Protegido con contraseña)", font=self.font_text, text_color=("#64748b", "#94a3b8")).grid(row=2, column=1, padx=20, pady=8, sticky="w")
