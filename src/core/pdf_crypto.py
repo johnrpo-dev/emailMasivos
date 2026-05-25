@@ -16,6 +16,11 @@ class PDFCrypto:
             if not os.path.exists(input_path):
                 raise FileNotFoundError(f"El archivo PDF no existe: {os.path.basename(input_path)}")
             
+            with open(input_path, 'rb') as f:
+                header = f.read(4)
+            if header != b'%PDF':
+                raise ValueError(f'El archivo no es un PDF válido: {os.path.basename(input_path)}')
+            
             # Owner password aleatoria (el usuario final nunca la ve)
             owner_pw = secrets.token_hex(16)
             

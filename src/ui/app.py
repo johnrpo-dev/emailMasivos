@@ -345,7 +345,7 @@ class App(ctk.CTk):
                 '$n.ShowBalloonTip(5000)'
             )
             subprocess.run(
-                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_code],
+                ["powershell", "-NoProfile", "-Command", ps_code],
                 capture_output=True,
                 text=True,
                 creationflags=subprocess.CREATE_NO_WINDOW,
