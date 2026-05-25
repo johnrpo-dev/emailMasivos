@@ -364,16 +364,20 @@ class App(ctk.CTk):
     def _emergency_cleanup_temp_files(self):
         """Limpieza de emergencia: sobreescribe y elimina temporales sems_*.pdf."""
         try:
-            temp_dir = tempfile.gettempdir()
-            for temp_file in glob.glob(os.path.join(temp_dir, "sems_*.pdf")):
-                try:
-                    size = os.path.getsize(temp_file)
-                    if size > 0:
-                        with open(temp_file, "r+b") as f:
-                            f.seek(0)
-                            f.write(os.urandom(size))
-                    os.remove(temp_file)
-                except Exception:
-                    pass
+            # Limpiar de ambas carpetas: la del sistema y la privada del espacio de trabajo
+            temp_dirs = [tempfile.gettempdir(), os.path.join(os.getcwd(), "data", "temp")]
+            for t_dir in temp_dirs:
+                if not os.path.exists(t_dir):
+                    continue
+                for temp_file in glob.glob(os.path.join(t_dir, "sems_*.pdf")):
+                    try:
+                        size = os.path.getsize(temp_file)
+                        if size > 0:
+                            with open(temp_file, "r+b") as f:
+                                f.seek(0)
+                                f.write(os.urandom(size))
+                        os.remove(temp_file)
+                    except Exception:
+                        pass
         except Exception:
             pass

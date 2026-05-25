@@ -231,36 +231,32 @@ def _resolve_domain_with_timeout(domain: str, port: int, timeout: float = 2.0) -
 
 def _domain_has_mail_server(domain: str) -> bool:
     """
-    Verifica si un dominio tiene servidores de correo.
-    Usa _resolve_domain_with_timeout para evitar bloqueos por DNS lentos o caídos.
+    Verifica si un dominio existe de forma segura resolviendo su dirección.
+    Distingue fallos físicos de existencia (dominio inexistente) de timeouts 
+    o caídas temporales de red para no bloquear envíos legítimos (falsos positivos).
     """
     if not domain or not isinstance(domain, str):
         return False
 
     try:
-        # Intentar resolver el dominio en el puerto 25 con timeout de 2.0s
-        _resolve_domain_with_timeout(domain, 25, timeout=2.0)
+        # Intentar resolver el dominio con timeout de 2.0s
+        _resolve_domain_with_timeout(domain, 80, timeout=2.0)
         return True
-    except (socket.gaierror, socket.herror):
-        # Si falla puerto 25 por dominio inexistente, intentar con puerto 443
-        try:
-            _resolve_domain_with_timeout(domain, 443, timeout=2.0)
-            return True
-        except (socket.gaierror, socket.herror):
+    except socket.gaierror as e:
+        # errno 11001 (WSAHOST_NOT_FOUND en Windows) o "not known" indica dominio inexistente
+        if e.errno == 11001 or "not known" in str(e).lower():
+            logger.warning(f"El dominio '{domain}' no existe (Host no encontrado / 11001).")
             return False
-        except (TimeoutError, socket.timeout):
-            logger.warning(f"Resolución de fallback (443) para '{domain}' expiró. Se asume válido para no bloquear envíos.")
-            return True
-        except Exception as e:
-            logger.warning(f"Error inesperado al verificar '{domain}' en puerto 443: {str(e)}. Se permitirá el envío.")
-            return True
+        # Para otros errores de socket (ej: falta de red local), no bloquear
+        logger.warning(f"Error de red/DNS al resolver '{domain}': {str(e)}. Se asume válido por seguridad de usabilidad.")
+        return True
     except (TimeoutError, socket.timeout):
-        # Si expira por completo en puerto 25, asumimos válido para no bloquear al usuario
-        logger.warning(f"La resolución DNS principal para '{domain}' expiró (timeout). Se asumirá válido para no bloquear el proceso.")
+        # Ante timeouts del resolvedor local o DNS lento, asumir válido para evitar falsos negativos
+        logger.warning(f"La resolución DNS para '{domain}' expiró (timeout). Se asume válido para no bloquear envíos.")
         return True
     except Exception as e:
-        # En caso de otros errores inesperados, asumir válido
-        logger.warning(f"Error inesperado al verificar el dominio '{domain}': {str(e)}. Se permitirá el envío.")
+        # Errores genéricos o inesperados, asumir válido
+        logger.warning(f"Error inesperado al verificar dominio '{domain}': {str(e)}. Se permitirá el envío.")
         return True
 
 

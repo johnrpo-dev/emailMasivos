@@ -50,6 +50,12 @@ class LicenseManager:
             if not license_key or not exp_date_str:
                 return False
 
+            # Verificar la firma criptográfica de la licencia guardada para evitar bypass local
+            payload = LicenseManager.verify_signature(license_key)
+            if not payload or payload.get("expires") != exp_date_str:
+                logger.critical("SEGURIDAD: La clave de licencia almacenada es inválida o ha sido alterada.")
+                return False
+
             now = datetime.now()
             exp_date = datetime.fromisoformat(exp_date_str)
             

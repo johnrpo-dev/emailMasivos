@@ -177,7 +177,7 @@ class WorkflowOrchestrator:
                 if on_stats_update:
                     on_stats_update(failed=valid_failed_count)
                 
-                msg = f"{email}: {validation.message}"
+                msg = f"{mask_email(email)}: {validation.message}"
                 if validation.suggestion:
                     msg += f" (Sugerencia: {validation.suggestion})"
                     email_corrections[email] = validation.suggestion
@@ -249,7 +249,7 @@ class WorkflowOrchestrator:
             with lock:
                 for rec in chunk_records:
                     err_msg = f"Error de conexión SMTP ({str(e)})"
-                    errores.append(f"{rec.get('email')}: {err_msg}")
+                    errores.append(f"{mask_email(rec.get('email'))}: {err_msg}")
                     records_fallidos.append(rec)
                     completed_count[0] += 1
                     failed_count[0] += 1
@@ -327,7 +327,7 @@ class WorkflowOrchestrator:
                     logger.error(f"Intento de path traversal detectado: {id_archivo}")
                     with lock:
                         err_msg = f"Ruta de archivo sospechosa activa bloqueada ({id_archivo})"
-                        errores.append(f"{email}: {err_msg}")
+                        errores.append(f"{mask_email(email)}: {err_msg}")
                         records_fallidos.append(record)
                         completed_count[0] += 1
                         failed_count[0] += 1
@@ -351,7 +351,7 @@ class WorkflowOrchestrator:
                     logger.error(f"Falta el archivo PDF: {os.path.basename(input_pdf)} (Destino: {mask_email(email)})")
                     with lock:
                         err_msg = f"PDF no encontrado ({id_archivo})"
-                        errores.append(f"{email}: {err_msg}")
+                        errores.append(f"{mask_email(email)}: {err_msg}")
                         records_fallidos.append(record)
                         completed_count[0] += 1
                         failed_count[0] += 1
@@ -376,8 +376,10 @@ class WorkflowOrchestrator:
                         })
                     continue
                 
-                # Crear ruta de archivo temporal segura (previene colisiones de procesos)
-                fd, temp_pdf = tempfile.mkstemp(suffix=".pdf", prefix=f"sems_{worker_id}_", dir=tempfile.gettempdir())
+                # Crear ruta de archivo temporal segura (previene colisiones de procesos y aísla el directorio)
+                temp_dir = os.path.join(os.getcwd(), "data", "temp")
+                os.makedirs(temp_dir, exist_ok=True)
+                fd, temp_pdf = tempfile.mkstemp(suffix=".pdf", prefix=f"sems_{worker_id}_", dir=temp_dir)
                 os.close(fd)
                 
                 try:
@@ -412,7 +414,7 @@ class WorkflowOrchestrator:
                     logger.error(f"Fallo de envío con {mask_email(email)}: {str(e)}")
                     with lock:
                         err_msg = str(e)
-                        errores.append(f"{email}: Error ({err_msg})")
+                        errores.append(f"{mask_email(email)}: Error ({err_msg})")
                         records_fallidos.append(record)
                         failed_count[0] += 1
                         if on_stats_update:

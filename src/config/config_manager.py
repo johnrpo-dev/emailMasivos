@@ -39,8 +39,9 @@ class ConfigManager:
                     pw = keyring.get_password(ConfigManager.SERVICE_NAME, user)
                     config["smtp_password"] = pw if pw else ""
                 except Exception as e:
-                    logger.error(f"Error al leer keyring: {e}")
+                    logger.critical(f"Fallo crítico al acceder a la bóveda de credenciales del SO (Keyring): {e}")
                     config["smtp_password"] = ""
+                    config["keyring_failed"] = True
             else:
                 config["smtp_password"] = ""
                 
