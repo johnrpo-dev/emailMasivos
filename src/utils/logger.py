@@ -60,4 +60,8 @@ def mask_email(email: str) -> str:
     return f"{masked_name}@{domain}"
 
 # Instancia global del logger
-logger = setup_logger()
+log_dir = os.path.join(os.environ.get("APPDATA", os.getcwd()), "SEMS_Pro")
+os.makedirs(log_dir, exist_ok=True)
+log_file_path = os.path.join(log_dir, "app.log")
+logger = setup_logger(log_file_path)
+

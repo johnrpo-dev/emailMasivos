@@ -5,7 +5,7 @@ Valida formato, dominios con typos comunes, y existencia de servidores MX.
 import re
 import socket
 import threading
-from src.utils.logger import logger
+from src.utils.logger import logger, mask_email
 
 # Regex para validación de formato de email (RFC 5322 simplificado)
 EMAIL_REGEX = re.compile(
@@ -154,7 +154,7 @@ def validate_email(email: str) -> EmailValidationResult:
             email=email,
             is_valid=False,
             error_type="formato",
-            message=f"Formato de email inválido: '{email}'"
+            message=f"Formato de email inválido: '{mask_email(email)}'"
         )
     
     # Extraer dominio completo y el nombre base del proveedor
