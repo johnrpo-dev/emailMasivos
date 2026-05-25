@@ -18,7 +18,7 @@ class ResultsModal(ctk.CTkToplevel):
         self.on_correct_and_retry = on_correct_and_retry
         
         self.title("Reporte de Envíos — SEMS Pro")
-        self.geometry("650x640")
+        self.geometry("650x680")
         self.resizable(False, False)
         self.transient(parent)
         self.grab_set()
@@ -117,7 +117,7 @@ class ResultsModal(ctk.CTkToplevel):
         lbl_list_title.pack(anchor="w", padx=35, pady=(0, 8))
         
         self.scroll_frame = ctk.CTkScrollableFrame(
-            self, height=240, fg_color="transparent", 
+            self, height=210, fg_color="transparent", 
             border_width=0
         )
         self.scroll_frame.pack(fill="both", expand=True, padx=25, pady=(0, 15))
