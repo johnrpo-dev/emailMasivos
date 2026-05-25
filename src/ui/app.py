@@ -24,7 +24,7 @@ class App(ctk.CTk):
         super().__init__()
 
         self.title("SEMS Pro - Envíos Masivos")
-        self.geometry("850x680")
+        self.geometry("850x760")
         self.resizable(False, False)
         
         # Inicializar historial efímero en memoria RAM (Zero-Footprint por diseño)
