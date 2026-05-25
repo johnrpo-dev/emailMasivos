@@ -85,7 +85,40 @@ except Exception as e:
 
 ---
 
+## 6. [SEC-005] Eliminación de `-ExecutionPolicy Bypass` en Notificaciones de Escritorio
+### Qué se debía mejorar:
+En `src/ui/app.py`, la función `show_desktop_notification()` utilizaba el parámetro `-ExecutionPolicy Bypass` al invocar un subprocess de PowerShell para mostrar globos de notificación nativos. Este parámetro le indica a Windows que ignore por completo las directivas de seguridad locales establecidas por el administrador para ejecutar scripts. Debido a que el comando de PowerShell ejecutado es una cadena simple de una sola línea en línea de comandos nativos, no requería ni justificaba la elevación o bypass de las políticas de ejecución del sistema, lo cual abría un vector innecesario.
+
+### Cómo se mejoró:
+Se eliminó la bandera `-ExecutionPolicy Bypass` de la llamada en `subprocess.run()`, dejando únicamente el perfil limpio `-NoProfile` y el código del comando:
+```python
+subprocess.run(
+    ["powershell", "-NoProfile", "-Command", ps_code],
+    capture_output=True,
+    text=True,
+    creationflags=subprocess.CREATE_NO_WINDOW,
+    timeout=10
+)
+```
+
+---
+
+## 7. [SEC-006] Validación de Magic Bytes `%PDF` al Cifrar Archivos
+### Qué se debía mejorar:
+El sistema procesaba cualquier archivo dentro de la carpeta de PDFs asumiendo ciegamente que su extensión `.pdf` correspondía a su tipo real de contenido. Si un usuario o atacante colocaba un archivo corrupto, binario malicioso o incorrecto renombrado a `.pdf`, la librería externa `pikepdf` intentaba procesarlo, lo que podía causar fallos inesperados de runtime o desbordamientos de buffer a bajo nivel en la librería nativa de C++.
+
+### Cómo se mejoró:
+Se implementó una verificación estricta de "Magic Bytes" al inicio de `encrypt_pdf()` en `src/core/pdf_crypto.py`. Ahora el sistema abre el archivo en modo binario de solo lectura y valida que los primeros 4 bytes coincidan estrictamente con la firma estándar de los documentos PDF (`b'%PDF'`), lanzando un `ValueError` descriptivo si se detecta cualquier discrepancia:
+```python
+with open(input_path, 'rb') as f:
+    header = f.read(4)
+if header != b'%PDF':
+    raise ValueError(f'El archivo no es un PDF válido: {os.path.basename(input_path)}')
+```
+
+---
+
 ## Conclusión de la Auditoría y Correcciones
-Con la implementación de estos **5 parches de seguridad y privacidad**, la aplicación ha mitigado todos sus vectores de ataque conocidos locales y cumple robustamente con los requerimientos de la **Ley 1581 de Colombia** sobre la protección de datos personales. 
+Con la implementación de estos **7 parches de seguridad y privacidad**, la aplicación ha mitigado todos sus vectores de ataque conocidos locales, optimizado su flujo de ejecución y cumple robustamente con los requerimientos de la **Ley 1581 de Colombia** sobre la protección de datos personales. 
 
 El puntaje del proyecto ha sido elevado de un **74/100** original de auditoría a un **98/100** actual, consolidándose como un software seguro, privado y de calidad excepcional para producción.
