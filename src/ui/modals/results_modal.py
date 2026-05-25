@@ -42,12 +42,22 @@ class ResultsModal(ctk.CTkToplevel):
             pass
             
     def setup_ui(self):
-        # 1. Header con Estética Premium
-        lbl_icon = ctk.CTkLabel(
-            self, text="⚠️", 
-            font=ctk.CTkFont(family="Segoe UI", size=32)
+        # 1. Círculo de Alerta Premium (Evita el emoji básico y crea un gráfico vectorial elegante)
+        icon_container = ctk.CTkFrame(
+            self, width=60, height=60, corner_radius=30, 
+            fg_color=("#fffbeb", "#1e1404"), 
+            border_width=2, 
+            border_color=("#f59e0b", "#d97706")
         )
-        lbl_icon.pack(pady=(20, 0))
+        icon_container.pack(pady=(25, 2))
+        icon_container.pack_propagate(False)
+        
+        lbl_icon = ctk.CTkLabel(
+            icon_container, text="!", 
+            font=ctk.CTkFont(family="Segoe UI", size=30, weight="bold"),
+            text_color=("#d97706", "#fbbf24")
+        )
+        lbl_icon.place(relx=0.5, rely=0.5, anchor="center")
         
         self.lbl_title = ctk.CTkLabel(
             self, text="Atención Requerida", 
@@ -58,41 +68,49 @@ class ResultsModal(ctk.CTkToplevel):
         
         exitosos = self.total - len(self.errores)
         
-        # 2. Rejilla de Resumen de Contadores Estilizada
+        # 2. Rejilla de Resumen de Contadores (KPI Cards Modernas)
         stats_frame = ctk.CTkFrame(self, fg_color="transparent")
         stats_frame.pack(fill="x", padx=30, pady=(10, 15))
         stats_frame.grid_columnconfigure((0, 1, 2), weight=1)
         
-        # Caja Total
-        box_total = ctk.CTkFrame(stats_frame, corner_radius=12, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
-        box_total.grid(row=0, column=0, padx=5, sticky="nsew")
-        ctk.CTkLabel(box_total, text="Procesados", font=self.font_text, text_color=("#475569", "#94a3b8")).pack(pady=(10, 2))
-        ctk.CTkLabel(box_total, text=str(self.total), font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"), text_color=("#4f46e5", "#818cf8")).pack(pady=(0, 10))
+        # Caja Total (Indigo Accent)
+        box_total = ctk.CTkFrame(stats_frame, corner_radius=14, fg_color=("#ffffff", "#0c101b"), border_width=1, border_color=("#e2e8f0", "#182235"))
+        box_total.grid(row=0, column=0, padx=6, sticky="nsew")
+        ctk.CTkLabel(box_total, text="Procesados", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color=("#64748b", "#64748b")).pack(pady=(12, 2))
+        ctk.CTkLabel(box_total, text=str(self.total), font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold"), text_color=("#4f46e5", "#818cf8")).pack(pady=(0, 12))
         
-        # Caja Éxitos
-        box_success = ctk.CTkFrame(stats_frame, corner_radius=12, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
-        box_success.grid(row=0, column=1, padx=5, sticky="nsew")
-        ctk.CTkLabel(box_success, text="Éxitos", font=self.font_text, text_color=("#475569", "#94a3b8")).pack(pady=(10, 2))
-        ctk.CTkLabel(box_success, text=str(exitosos), font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"), text_color=("#10b981", "#34d399")).pack(pady=(0, 10))
+        # Caja Éxitos (Emerald Accent)
+        box_success = ctk.CTkFrame(stats_frame, corner_radius=14, fg_color=("#ffffff", "#0c101b"), border_width=1, border_color=("#e2e8f0", "#182235"))
+        box_success.grid(row=0, column=1, padx=6, sticky="nsew")
+        ctk.CTkLabel(box_success, text="Éxitos", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color=("#64748b", "#64748b")).pack(pady=(12, 2))
+        ctk.CTkLabel(box_success, text=str(exitosos), font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold"), text_color=("#10b981", "#34d399")).pack(pady=(0, 12))
         
-        # Caja Errores
-        box_failed = ctk.CTkFrame(stats_frame, corner_radius=12, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
-        box_failed.grid(row=0, column=2, padx=5, sticky="nsew")
-        ctk.CTkLabel(box_failed, text="Fallidos", font=self.font_text, text_color=("#475569", "#94a3b8")).pack(pady=(10, 2))
-        ctk.CTkLabel(box_failed, text=str(len(self.errores)), font=ctk.CTkFont(family="Segoe UI", size=18, weight="bold"), text_color=("#ef4444", "#f87171")).pack(pady=(0, 10))
+        # Caja Errores (Rose Accent)
+        box_failed = ctk.CTkFrame(stats_frame, corner_radius=14, fg_color=("#ffffff", "#0c101b"), border_width=1, border_color=("#e2e8f0", "#182235"))
+        box_failed.grid(row=0, column=2, padx=6, sticky="nsew")
+        ctk.CTkLabel(box_failed, text="Fallidos", font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"), text_color=("#64748b", "#64748b")).pack(pady=(12, 2))
+        ctk.CTkLabel(box_failed, text=str(len(self.errores)), font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold"), text_color=("#ef4444", "#f87171")).pack(pady=(0, 12))
         
-        # 3. Aviso Inteligente de Correcciones Disponibles
+        # 3. Aviso Inteligente de Correcciones Disponibles (Amber Glow)
         if self.email_corrections:
-            card_fix = ctk.CTkFrame(self, corner_radius=14, fg_color=("#fffbeb", "#1a1204"), border_width=1, border_color=("#f59e0b", "#d97706"))
-            card_fix.pack(fill="x", padx=30, pady=(0, 15), ipady=5)
+            card_fix = ctk.CTkFrame(
+                self, corner_radius=12, 
+                fg_color=("#fffbeb", "#1c1407"), 
+                border_width=1, 
+                border_color=("#fde047", "#a16207")
+            )
+            card_fix.pack(fill="x", padx=30, pady=(0, 15))
             
             fix_count = len(self.email_corrections)
             lbl_fix = ctk.CTkLabel(
                 card_fix, 
                 text=f"✨ Se detectaron {fix_count} sugerencia(s) de corrección automática.\nPresione 'Corregir y Reintentar' para auto-reparar estos correos instantáneamente.",
-                font=self.font_text, text_color=("#b45309", "#fbbf24"), justify="center"
+                font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"), 
+                text_color=("#d97706", "#fef08a"), 
+                justify="center",
+                pady=10
             )
-            lbl_fix.pack(padx=20, pady=10)
+            lbl_fix.pack(padx=20, fill="both")
             
         # 4. Sección de Historial de Errores - Scrollable & Tarjetas Modulares
         lbl_list_title = ctk.CTkLabel(self, text="Detalle de Fallos Encontrados:", font=self.font_section, text_color=("#334155", "#cbd5e1"))
@@ -104,7 +122,7 @@ class ResultsModal(ctk.CTkToplevel):
         )
         self.scroll_frame.pack(fill="both", expand=True, padx=25, pady=(0, 15))
         
-        # Poblar lista de errores de forma estructurada
+        # Poblar lista de errores estructurados
         for err_str in self.errores:
             self._render_error_card(err_str)
             
@@ -114,7 +132,7 @@ class ResultsModal(ctk.CTkToplevel):
         
         self.btn_copy = ctk.CTkButton(
             btn_frame, text="📋 Copiar Reporte", command=self.copy_to_clipboard, 
-            width=140, height=46, corner_radius=12, 
+            width=140, height=45, corner_radius=12, 
             fg_color=("#4b5563", "#1e293b"), hover_color=("#374151", "#2d3748"),
             text_color=("#ffffff", "#e2e8f0"), font=self.font_label
         )
@@ -123,7 +141,7 @@ class ResultsModal(ctk.CTkToplevel):
         if self.email_corrections:
             self.btn_correct = ctk.CTkButton(
                 btn_frame, text="✨ Corregir y Reintentar", command=self.handle_correct_and_retry,
-                width=200, height=46, corner_radius=12,
+                width=200, height=45, corner_radius=12,
                 fg_color=("#10b981", "#059669"), hover_color=("#059669", "#047857"),
                 text_color="white", font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold")
             )
@@ -132,7 +150,7 @@ class ResultsModal(ctk.CTkToplevel):
         if self.records_fallidos:
             self.btn_retry = ctk.CTkButton(
                 btn_frame, text="🔄 Reintentar Fallidos", command=self.handle_retry, 
-                width=160, height=46, corner_radius=12, 
+                width=160, height=45, corner_radius=12, 
                 fg_color=("#f59e0b", "#d97706"), hover_color=("#d97706", "#b45309"), 
                 text_color="white", font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold")
             )
@@ -142,8 +160,8 @@ class ResultsModal(ctk.CTkToplevel):
         """Renderiza una tarjeta visual e individual para cada error."""
         card = ctk.CTkFrame(
             self.scroll_frame, corner_radius=12, 
-            fg_color=("#ffffff", "#0d111c"), 
-            border_width=1, border_color=("#e2e8f0", "#1e293b")
+            fg_color=("#ffffff", "#090d16"), 
+            border_width=1, border_color=("#e2e8f0", "#182235")
         )
         card.pack(fill="x", pady=6, padx=5, ipady=6)
         card.grid_columnconfigure(0, weight=1)
@@ -154,15 +172,15 @@ class ResultsModal(ctk.CTkToplevel):
         
         if ":" in err_str:
             parts = err_str.split(":", 1)
-            # Verificar si la parte izquierda es un correo enmascarado
             if "@" in parts[0]:
                 email_part = parts[0].strip()
                 detail_part = parts[1].strip()
                 
         # Clasificar la naturaleza del error para pintar tags y colores inteligentes
         badge_text = "⚠️ FALLO"
-        badge_color = ("#64748b", "#334155")
-        text_color = ("#475569", "#cbd5e1")
+        badge_color = ("#64748b", "#222a36")
+        text_color = ("#475569", "#94a3b8")
+        border_color = ("#cbd5e1", "#334155")
         is_suggestion = False
         suggestion_val = ""
         
@@ -170,55 +188,63 @@ class ResultsModal(ctk.CTkToplevel):
         if "typo" in detail_lower or "quisiste decir" in detail_lower:
             badge_text = "💡 SUGERENCIA"
             badge_color = ("#fef3c7", "#291505")
-            text_color = ("#b45309", "#fbbf24")
+            text_color = ("#d97706", "#fef08a")
+            border_color = ("#fde047", "#854d0e")
             is_suggestion = True
-            # Intentar extraer la sugerencia limpia
             sug_match = re.search(r'\(sugerencia:\s*([^)]+)\)', detail_lower)
             if sug_match:
                 suggestion_val = sug_match.group(1).strip()
         elif "servidores" in detail_lower or "dominio" in detail_lower or "dns" in detail_lower:
             badge_text = "🌐 DOMINIO INVÁLIDO"
             badge_color = ("#fee2e2", "#2d1616")
-            text_color = ("#b91c1c", "#f87171")
+            text_color = ("#dc2626", "#fca5a5")
+            border_color = ("#fca5a5", "#991b1b")
         elif "no encontrado" in detail_lower or "pdf" in detail_lower:
             badge_text = "📄 PDF FALTANTE"
             badge_color = ("#ffedd5", "#2a1405")
-            text_color = ("#c2410c", "#fb923c")
+            text_color = ("#ea580c", "#fed7aa")
+            border_color = ("#fdba74", "#9a3412")
         elif "conexión" in detail_lower or "smtp" in detail_lower or "timeout" in detail_lower:
             badge_text = "📡 ERROR SMTP"
             badge_color = ("#f3e8ff", "#21152d")
-            text_color = ("#7e22ce", "#c084fc")
+            text_color = ("#9333ea", "#e9d5ff")
+            border_color = ("#d8b4fe", "#6b21a8")
             
-        # 1. Header de la tarjeta (Email del Destinatario + Badge de Estado)
+        # 1. Header de la tarjeta (Email del Destinatario + Badge Contorneado)
         header_frame = ctk.CTkFrame(card, fg_color="transparent")
         header_frame.pack(fill="x", padx=15, pady=(8, 2))
         
         lbl_email = ctk.CTkLabel(
             header_frame, text=email_part, 
             font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
-            text_color=("#1e1b4b", "#c7d2fe")
+            text_color=("#1e293b", "#e2e8f0")
         )
         lbl_email.pack(side="left")
         
-        # Etiqueta tipo Badge
-        lbl_badge = ctk.CTkLabel(
-            header_frame, text=badge_text, 
-            font=ctk.CTkFont(family="Segoe UI", size=9, weight="bold"),
+        # Contenedor del Badge Premium con borde fino
+        badge_frame = ctk.CTkFrame(
+            header_frame, corner_radius=6,
             fg_color=badge_color[1] if ctk.get_appearance_mode() == "Dark" else badge_color[0],
-            text_color=text_color[1] if ctk.get_appearance_mode() == "Dark" else text_color[0],
-            corner_radius=6, height=18, width=110
+            border_width=1,
+            border_color=border_color[1] if ctk.get_appearance_mode() == "Dark" else border_color[0]
         )
-        lbl_badge.pack(side="right")
+        badge_frame.pack(side="right")
+        
+        lbl_badge = ctk.CTkLabel(
+            badge_frame, text=badge_text, 
+            font=ctk.CTkFont(family="Segoe UI", size=9, weight="bold"),
+            text_color=text_color[1] if ctk.get_appearance_mode() == "Dark" else text_color[0],
+            padx=10, pady=2
+        )
+        lbl_badge.pack()
         
         # 2. Contenido descriptivo del fallo
         content_frame = ctk.CTkFrame(card, fg_color="transparent")
         content_frame.pack(fill="x", padx=15, pady=(2, 6))
         
-        # Remover la parte de "(Sugerencia: ...)" del texto descriptivo para no redundar
         clean_detail = re.sub(r'\(sugerencia:.*?\)', '', detail_part, flags=re.IGNORECASE).strip()
         
         if is_suggestion and suggestion_val:
-            # Diseño Premium especial para corregibles automáticos
             lbl_desc = ctk.CTkLabel(
                 content_frame, 
                 text="El dominio ingresado contiene un error de ortografía común.", 
@@ -227,19 +253,23 @@ class ResultsModal(ctk.CTkToplevel):
             )
             lbl_desc.pack(anchor="w", pady=(0, 4))
             
-            sug_frame = ctk.CTkFrame(content_frame, corner_radius=8, fg_color=("#f0fdf4", "#06180e"), border_width=1, border_color=("#bbf7d0", "#14532d"))
-            sug_frame.pack(fill="x", pady=2)
+            # Pill de sugerencia perfectamente encajada (sin expandirse artificialmente a la derecha)
+            sug_frame = ctk.CTkFrame(
+                content_frame, corner_radius=8, 
+                fg_color=("#e6f4ea", "#0a1f11"), 
+                border_width=1, border_color=("#bbf7d0", "#14532d")
+            )
+            sug_frame.pack(anchor="w", pady=(4, 2), padx=2)
             
             lbl_sug_text = ctk.CTkLabel(
                 sug_frame, 
                 text=f"¿Quisiste decir: {suggestion_val}?", 
                 font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
-                text_color=("#15803d", "#4ade80"),
-                padx=10, pady=4
+                text_color=("#166534", "#4ade80"),
+                padx=12, pady=4
             )
-            lbl_sug_text.pack(anchor="w")
+            lbl_sug_text.pack()
         else:
-            # Error estándar
             lbl_desc = ctk.CTkLabel(
                 content_frame, text=clean_detail, 
                 font=self.font_text, text_color=("#475569", "#94a3b8"),
@@ -249,11 +279,8 @@ class ResultsModal(ctk.CTkToplevel):
             
     def copy_to_clipboard(self):
         self.clipboard_clear()
-        
-        # Formatear el reporte completo para el portapapeles
         raw_report = "--- REPORTE DE ERRORES SEMS PRO ---\n\n"
         raw_report += "\n".join(self.errores)
-        
         self.clipboard_append(raw_report)
         messagebox.showinfo("Copiado", "El reporte ha sido copiado al portapapeles.", parent=self)
         
@@ -264,7 +291,6 @@ class ResultsModal(ctk.CTkToplevel):
             if hasattr(self, 'btn_retry'):
                 self.btn_retry.configure(state="disabled")
             self.lbl_title.configure(text="Aplicando correcciones...", text_color="gray")
-            
             self.on_correct_and_retry()
             self.safe_close_modal()
             
@@ -275,6 +301,5 @@ class ResultsModal(ctk.CTkToplevel):
             if hasattr(self, 'btn_correct'):
                 self.btn_correct.configure(state="disabled")
             self.lbl_title.configure(text="Reintentando envios...", text_color="gray")
-            
             self.on_retry()
             self.safe_close_modal()
