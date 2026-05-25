@@ -118,6 +118,29 @@ if header != b'%PDF':
 
 ---
 
+## 8. [UI-001] Rediseño Estético Premium y Corrección de Overflow en ResultsModal
+### Qué se debía mejorar:
+El modal de reporte de errores (`ResultsModal`) presentaba un aspecto plano y carecía de acabados de diseño de alta gama. El icono de alerta utilizaba el emoji genérico de Windows `⚠️` que se renderiza a baja resolución, los contadores numéricos (procesados, éxitos, fallados) se visualizaban en cajas cuadradas simples y la pastilla verde de sugerencias ortográficas (`sug_frame`) se estiraba artificialmente a lo ancho de toda la tarjeta, dejando un vacío plano a la derecha. Además, la altura fija de la ventana (`640px`) causaba que la barra inferior de botones quedara cortada e ilegible debido al desbordamiento vertical de las tarjetas de error.
+
+### Cómo se mejoró:
+1. **Icono Gráfico Vectorial:** Se reemplazó el emoji plano por un círculo contenedor dorado brillante con un signo de exclamación `!` centrado en Segoe UI Bold de alta resolución.
+2. **KPI Cards Ejecutivas:** Se incrementó el tamaño de los números a `24px` con peso negrita y se les dio bordes extra finos en color pizarra oscuro (`#182235`), imitando los paneles de análisis más modernos.
+3. **Pill Auto-Ajustable (Shrink-Wrap):** Se configuró el marco de sugerencias con `anchor="w"` sin estiramiento horizontal, permitiendo que se encaje como una pastilla/etiqueta autoadaptativa al texto de sugerencia.
+4. **Prevención de Desborde:** Se aumentó la altura de la ventana a `680px` y se ajustó la del scroll interno a `210px`, dando aire visual a los botones inferiores para que no se corten.
+
+---
+
+## 9. [UI-002] Badges de Estado Contorneados con Iconografía Personalizada (Check y Cruz)
+### Qué se debía mejorar:
+En la visualización detallada del historial de envíos de un lote (`LoteModal` y `HistoryView`), las etiquetas de estado del envío consistían en bloques de color sólido rectangulares que decían de manera plana `EXITOSO` y `FALLIDO`. Este diseño lucía boxy y poco estilizado para un software de nivel corporativo.
+
+### Cómo se mejoró:
+Se rediseñó el sistema de badges de estado en `src/ui/modals/lote_modal.py` y `src/ui/views/history_view.py`. Ahora se renderizan como cápsulas premium contorneadas con bordes finos de color atenuado y un prefijo de ícono unicode estilizado de alta definición:
+* **Exitoso:** Un pill verde esmeralda con borde fino (`#14532d` en modo oscuro / `#bbf7d0` en modo claro) con el texto/ícono `✓ Exitoso` en tono verde vibrante.
+* **Fallido:** Un pill carmesí con borde fino (`#991b1b` en modo oscuro / `#fca5a5` en modo claro) con el texto/ícono `✕ Fallido` en tono rosa atenuado.
+
+---
+
 ## Control de Versiones y Git Push
 Todos los parches de seguridad y mejoras descritos en este documento han sido integrados, verificados síncronamente y consolidados en el sistema de control de versiones Git:
 
@@ -128,6 +151,6 @@ Todos los parches de seguridad y mejoras descritos en este documento han sido in
 ---
 
 ## Conclusión de la Auditoría y Correcciones
-Con la implementación de estos **7 parches de seguridad y privacidad**, la aplicación ha mitigado todos sus vectores de ataque conocidos locales, optimizado su flujo de ejecución y cumple robustamente con los requerimientos de la **Ley 1581 de Colombia** sobre la protección de datos personales. 
+Con la implementación de estos **7 parches de seguridad y privacidad y 2 rediseños de UI premium**, la aplicación ha mitigado todos sus vectores de ataque conocidos locales, optimizado su flujo de ejecución y cumple robustamente con los requerimientos de la **Ley 1581 de Colombia** sobre la protección de datos personales. 
 
 El puntaje del proyecto ha sido elevado de un **74/100** original de auditoría a un **98/100** actual, consolidándose como un software seguro, privado y de calidad excepcional para producción.
