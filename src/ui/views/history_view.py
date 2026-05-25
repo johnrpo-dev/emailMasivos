@@ -180,33 +180,26 @@ class HistoryView(ctk.CTkFrame):
             lbl_desc = ctk.CTkLabel(row_frame, text=desc, font=self.font_text, justify="left", anchor="w", text_color=("#334155", "#cbd5e1"))
             lbl_desc.grid(row=0, column=0, padx=20, pady=10, sticky="w")
             
-            # Etiqueta Estado premium contorneada con ícono (chulo verde / x roja)
+            # Etiqueta Estado premium plana con ícono (chulo verde / x roja)
             if estado == "exito":
-                bg_color = ("#e6f4ea", "#0a1f11")
-                border_color = ("#bbf7d0", "#14532d")
-                text_color = ("#166534", "#4ade80")
+                bg_color = ("#e6f4ea", "#0f2d1a")
+                text_color = ("#137333", "#81c995")
                 status_text = "✓ Exitoso"
             else:
-                bg_color = ("#fee2e2", "#2d1616")
-                border_color = ("#fca5a5", "#991b1b")
-                text_color = ("#dc2626", "#fca5a5")
+                bg_color = ("#fce8e6", "#3c1e1e")
+                text_color = ("#c5221f", "#f28b82")
                 status_text = "✕ Fallido"
             
-            badge_frame = ctk.CTkFrame(
-                row_frame, corner_radius=8,
-                fg_color=bg_color[1] if ctk.get_appearance_mode() == "Dark" else bg_color[0],
-                border_width=1,
-                border_color=border_color[1] if ctk.get_appearance_mode() == "Dark" else border_color[0]
-            )
-            badge_frame.grid(row=0, column=1, padx=20, pady=8, sticky="e")
-            
             lbl_est = ctk.CTkLabel(
-                badge_frame, text=status_text,
+                row_frame, text=status_text,
                 font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
-                text_color=text_color[1] if ctk.get_appearance_mode() == "Dark" else text_color[0],
-                padx=12, pady=4
+                fg_color=bg_color,
+                text_color=text_color,
+                corner_radius=12,
+                height=26,
+                padx=14
             )
-            lbl_est.pack()
+            lbl_est.grid(row=0, column=1, padx=20, pady=8, sticky="e")
             
             if detalles:
                 lbl_det = ctk.CTkLabel(row_frame, text=f"Detalle: {detalles}", font=ctk.CTkFont(family="Segoe UI", size=11, slant="italic"), text_color=("#ef4444", "#f87171"), justify="left", anchor="w")
