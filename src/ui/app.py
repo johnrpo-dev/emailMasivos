@@ -301,11 +301,12 @@ class App(ctk.CTk):
             
             for record in records_fallidos:
                 email_original = str(record.get("email", "")).strip()
-                if email_original in email_corrections:
+                email_masked = mask_email(email_original)
+                if email_masked in email_corrections:
                     corrected = dict(record)
-                    corrected["email"] = email_corrections[email_original]
+                    corrected["email"] = email_corrections[email_masked]
                     corrected_records.append(corrected)
-                    logger.info(f"Email corregido: {email_original} -> {email_corrections[email_original]}")
+                    logger.info(f"Email corregido: {email_masked} -> {mask_email(email_corrections[email_masked])}")
                 else:
                     remaining_records.append(record)
                     

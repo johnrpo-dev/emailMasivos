@@ -180,7 +180,7 @@ class WorkflowOrchestrator:
                 msg = f"{mask_email(email)}: {validation.message}"
                 if validation.suggestion:
                     msg += f" (Sugerencia: {validation.suggestion})"
-                    email_corrections[email] = validation.suggestion
+                    email_corrections[mask_email(email)] = validation.suggestion
                 errores.append(msg)
                 records_fallidos.append(record)
                 logger.warning(f"Email rechazado pre-envío: {validation.message}")

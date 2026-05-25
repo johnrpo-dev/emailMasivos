@@ -19,3 +19,8 @@ scratch_*.txt
 generar_licencia.py
 reset_licencia.py
 
+# Directorio temporal aislado
+data/temp/
+
+# Documentos internos de auditoría
+correcciones.md
