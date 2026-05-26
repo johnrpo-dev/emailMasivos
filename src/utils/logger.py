@@ -52,6 +52,9 @@ def mask_email(email: str) -> str:
     name = parts[0]
     domain = parts[1]
     
+    if not name:
+        return f"***@{domain}"
+    
     if len(name) <= 2:
         masked_name = name[0] + "***"
     else:
