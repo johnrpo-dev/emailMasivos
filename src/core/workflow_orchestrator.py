@@ -314,13 +314,18 @@ class WorkflowOrchestrator:
                         })
                     continue
                 
-                # Seguridad: Sanitizar id_archivo contra ataques de path traversal
-                id_archivo = os.path.basename(id_archivo)
-                id_archivo = re.sub(r'[^\w.\- ]', '_', id_archivo)
-                if not id_archivo.lower().endswith(".pdf"):
-                    id_archivo += ".pdf"
+                # Seguridad: Normalizar separadores de ruta para compatibilidad multiplataforma
+                # Esto asegura que barras invertidas de Windows se traten como separadores en cualquier OS
+                id_archivo_clean = id_archivo.replace('\\', '/')
+                id_archivo_base = os.path.basename(id_archivo_clean)
+                id_archivo_sanitized = re.sub(r'[^\w.\- ]', '_', id_archivo_base)
+                if not id_archivo_sanitized.lower().endswith(".pdf"):
+                    id_archivo_sanitized += ".pdf"
                 
-                input_pdf = os.path.join(pdf_dir, id_archivo)
+                # Para la validación perimetral de Path Traversal (defensa en profundidad),
+                # usamos la ruta original mapeada a los separadores nativos del OS actual.
+                id_archivo_os = id_archivo.replace('\\', os.sep).replace('/', os.sep)
+                input_pdf = os.path.join(pdf_dir, id_archivo_os)
                 
                 # Seguridad: Validar que la ruta resultante está estrictamente dentro del directorio esperado
                 real_input = os.path.realpath(input_pdf)
@@ -348,6 +353,9 @@ class WorkflowOrchestrator:
                             "detalles": err_msg
                         })
                     continue
+                # Si pasa la validación perimetral, actualizamos el nombre del archivo al formato sanitizado
+                id_archivo = id_archivo_sanitized
+                input_pdf = os.path.join(pdf_dir, id_archivo)
                 
                 if not os.path.exists(input_pdf):
                     logger.error(f"Falta el archivo PDF: {os.path.basename(input_pdf)} (Destino: {mask_email(email)})")
@@ -393,11 +401,6 @@ class WorkflowOrchestrator:
                     
                     # Envío SMTP seguro
                     email_service.send_email_with_attachment(email, subject, temp_pdf, filename_override=id_archivo)
-                    logger.info(f"Éxito en envío: {mask_email(email)}")
-                    
-                    if send_delay > 0:
-                        time.sleep(send_delay)
-                    
                     with lock:
                         success_count[0] += 1
                         if on_stats_update:
@@ -441,6 +444,11 @@ class WorkflowOrchestrator:
                     # Borrado seguro síncrono (previene archivos huérfanos al cerrar la app)
                     if os.path.exists(temp_pdf):
                         PDFCrypto.secure_cleanup(temp_pdf)
+                    
+                    # Throttling: Aplicar retardo siempre después de cada intento de envío (éxito o fallo)
+                    # para proteger la reputación SMTP del remitente.
+                    if send_delay > 0:
+                        time.sleep(send_delay)
                 
                 with lock:
                     completed_count[0] += 1
