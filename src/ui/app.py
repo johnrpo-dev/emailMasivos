@@ -49,6 +49,7 @@ class App(ctk.CTk):
         self.config_user = ctk.StringVar()
         self.config_pass = ctk.StringVar()
         self.config_subject = ctk.StringVar()
+        self.config_delay = ctk.StringVar(value="2")
         
         # Proveedores SMTP preconfigurados
         self.smtp_providers = {
@@ -80,6 +81,7 @@ class App(ctk.CTk):
         self.config_user.set(mask_email(self._real_smtp_user))
         self.config_pass.set(config.get("smtp_password", ""))
         self.config_subject.set(config.get("email_subject", ""))
+        self.config_delay.set(str(config.get("send_delay", 2)))
         self.initial_body = config.get("email_body", "")
         
         # Detectar proveedor guardado por su host

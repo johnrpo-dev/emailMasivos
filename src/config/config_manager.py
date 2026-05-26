@@ -19,7 +19,8 @@ class ConfigManager:
             "smtp_host": "smtp.gmail.com",
             "smtp_port": 587,
             "email_subject": "Documento de {id_servicio}",
-            "email_body": "Estimado usuario,\n\nAdjunto encontrará su documento seguro. Para garantizar la máxima privacidad, este archivo ha sido cifrado con altos estándares de seguridad (AES-256).\n\nPara abrir el archivo, por favor utilice su clave de seguridad asignada.\n\nAtentamente,\nEl equipo."
+            "email_body": "Estimado usuario,\n\nAdjunto encontrará su documento seguro. Para garantizar la máxima privacidad, este archivo ha sido cifrado con altos estándares de seguridad (AES-256).\n\nPara abrir el archivo, por favor utilice su clave de seguridad asignada.\n\nAtentamente,\nEl equipo.",
+            "send_delay": 2
         }
         
         if not os.path.exists(ConfigManager.CONFIG_FILE):
@@ -52,14 +53,15 @@ class ConfigManager:
             return default_config
             
     @staticmethod
-    def save_config(smtp_user, smtp_password, smtp_host, smtp_port, email_subject, email_body):
+    def save_config(smtp_user, smtp_password, smtp_host, smtp_port, email_subject, email_body, send_delay=2):
         """Guarda la configuración actualizando el archivo y Keyring."""
         config = {
             "smtp_user": smtp_user,
             "smtp_host": smtp_host,
             "smtp_port": int(smtp_port) if smtp_port else 587,
             "email_subject": email_subject,
-            "email_body": email_body
+            "email_body": email_body,
+            "send_delay": int(send_delay)
         }
         
         try:

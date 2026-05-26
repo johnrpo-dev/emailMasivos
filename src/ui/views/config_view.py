@@ -37,9 +37,13 @@ class ConfigView(ctk.CTkFrame):
         ctk.CTkLabel(card_creds, text="Código de App:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=1, column=0, padx=20, pady=(0, 10), sticky="w")
         ctk.CTkEntry(card_creds, textvariable=self.controller.config_pass, show="*", font=self.font_text, height=36, fg_color=("#f8fafc", "#070a13"), border_color=("#cbd5e1", "#1e293b"), placeholder_text="Contraseña de 16 caracteres").grid(row=1, column=1, padx=20, pady=(0, 10), sticky="ew")
         
-        ctk.CTkLabel(card_creds, text="Proveedor de Correo:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=2, column=0, padx=20, pady=(0, 20), sticky="w")
+        ctk.CTkLabel(card_creds, text="Proveedor de Correo:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=2, column=0, padx=20, pady=(0, 10), sticky="w")
         provider_menu = ctk.CTkOptionMenu(card_creds, variable=self.controller.config_provider, values=list(self.controller.smtp_providers.keys()), font=self.font_text, height=36, fg_color=("#4f46e5", "#6366f1"), button_color=("#4338ca", "#4f46e5"), button_hover_color=("#3730a3", "#4338ca"))
-        provider_menu.grid(row=2, column=1, padx=20, pady=(0, 20), sticky="w")
+        provider_menu.grid(row=2, column=1, padx=20, pady=(0, 10), sticky="w")
+        
+        ctk.CTkLabel(card_creds, text="Retardo entre Envíos (s):", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=3, column=0, padx=20, pady=(0, 20), sticky="w")
+        delay_menu = ctk.CTkOptionMenu(card_creds, variable=self.controller.config_delay, values=["0", "1", "2", "3", "5", "10"], font=self.font_text, height=36, fg_color=("#4f46e5", "#6366f1"), button_color=("#4338ca", "#4f46e5"), button_hover_color=("#3730a3", "#4338ca"))
+        delay_menu.grid(row=3, column=1, padx=20, pady=(0, 20), sticky="w")
 
         # Card Plantilla
         card_tpl = ctk.CTkFrame(self, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
@@ -77,7 +81,8 @@ class ConfigView(ctk.CTkFrame):
         success = ConfigManager.save_config(
             self.controller._real_smtp_user, self.controller.config_pass.get(),
             provider["host"], str(provider["port"]),
-            self.controller.config_subject.get(), body
+            self.controller.config_subject.get(), body,
+            self.controller.config_delay.get()
         )
         if success:
             messagebox.showinfo("Éxito", "Configuración guardada correctamente.")

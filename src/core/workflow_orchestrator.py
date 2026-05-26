@@ -1,6 +1,7 @@
 import os
 import re
 import tempfile
+import time
 import threading
 import hashlib
 import hmac
@@ -88,6 +89,7 @@ class WorkflowOrchestrator:
             # Obtener subject dinámico de la configuración actual antes de enviar
             config = ConfigManager.get_config()
             subject_template = config.get("email_subject", "Documento de {id_servicio}")
+            send_delay = config.get("send_delay", 2)
             
             errores = []
             records_fallidos = []
@@ -117,7 +119,7 @@ class WorkflowOrchestrator:
                 records_validos, pdf_dir, hmac_key, subject_template, 
                 batch_record, errores, records_fallidos, email_corrections,
                 len(records) - len(records_validos),
-                on_progress, on_stats_update, on_log
+                on_progress, on_stats_update, on_log, send_delay
             )
             
             # Consolidar totales del lote procesado
@@ -205,7 +207,7 @@ class WorkflowOrchestrator:
 
     def _dispatch_workers(self, records_validos, pdf_dir, hmac_key, subject_template,
                           batch_record, errores, records_fallidos, email_corrections,
-                          valid_failed_count, on_progress, on_stats_update, on_log):
+                          valid_failed_count, on_progress, on_stats_update, on_log, send_delay=2):
         """Fase 2: Dispatching concurrent workers in dynamic chunks."""
         if on_progress:
             on_progress("Iniciando envío masivo en paralelo...", 0.0)
@@ -233,13 +235,13 @@ class WorkflowOrchestrator:
                     self._process_chunk_worker, chunk, w_id, pdf_dir, hmac_key, 
                     subject_template, batch_record, errores, records_fallidos,
                     on_progress, on_stats_update, on_log, lock,
-                    completed_count, success_count, failed_count, total_validos
+                    completed_count, success_count, failed_count, total_validos, send_delay
                 )
 
     def _process_chunk_worker(self, chunk_records, worker_id, pdf_dir, hmac_key, 
                               subject_template, batch_record, errores, records_fallidos,
                               on_progress, on_stats_update, on_log, lock,
-                              completed_count, success_count, failed_count, total_validos):
+                              completed_count, success_count, failed_count, total_validos, send_delay=2):
         """Tarea concurrente individual de cada hilo para procesar su respectivo chunk."""
         email_service = EmailService()
         try:
@@ -392,6 +394,9 @@ class WorkflowOrchestrator:
                     # Envío SMTP seguro
                     email_service.send_email_with_attachment(email, subject, temp_pdf, filename_override=id_archivo)
                     logger.info(f"Éxito en envío: {mask_email(email)}")
+                    
+                    if send_delay > 0:
+                        time.sleep(send_delay)
                     
                     with lock:
                         success_count[0] += 1
