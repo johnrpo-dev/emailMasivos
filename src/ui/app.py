@@ -23,8 +23,9 @@ class App(ctk.CTk):
         super().__init__()
 
         self.title("SEMS Pro - Envíos Masivos")
-        self.geometry("850x760")
-        self.resizable(False, False)
+        # Reducimos la altura por defecto a 690px para pantallas de 15" y permitimos redimensionar libremente
+        self.geometry("850x690")
+        self.resizable(True, True)
         
         # Inicializar historial efímero en memoria RAM (Zero-Footprint por diseño)
         self.session_batches = []
