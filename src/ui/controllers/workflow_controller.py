@@ -12,7 +12,7 @@ class WorkflowController:
     def __init__(self, app):
         self.app = app
         self._retry_count = 0
-        self.MAX_RETRIES = 2
+        self.MAX_RETRIES = 10
 
     def start_process(self):
         """Prepara e inicia la orquestación del proceso en segundo plano."""

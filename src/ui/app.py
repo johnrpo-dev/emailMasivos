@@ -45,7 +45,9 @@ class App(ctk.CTk):
         self.config_user = ctk.StringVar()
         self.config_pass = ctk.StringVar()
         self.config_subject = ctk.StringVar()
+        self.config_sender_name = ctk.StringVar(value="SEMS Pro")
         self.config_delay = ctk.StringVar(value="2")
+        self.config_logo_path = ctk.StringVar()
         
         # Proveedores SMTP preconfigurados
         self.smtp_providers = {
@@ -80,7 +82,9 @@ class App(ctk.CTk):
         self.config_user.set(mask_email(self._real_smtp_user))
         self.config_pass.set(config.get("smtp_password", ""))
         self.config_subject.set(config.get("email_subject", ""))
+        self.config_sender_name.set(config.get("sender_name", "SEMS Pro"))
         self.config_delay.set(str(config.get("send_delay", 2)))
+        self.config_logo_path.set(config.get("logo_path", ""))
         self.initial_body = config.get("email_body", "")
         
         # Detectar proveedor guardado por su host

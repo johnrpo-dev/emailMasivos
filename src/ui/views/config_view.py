@@ -23,8 +23,12 @@ class ConfigView(ctk.CTkFrame):
         lbl_subtitle = ctk.CTkLabel(self, text="Configure las credenciales SMTP de su proveedor y la plantilla de correo", font=ctk.CTkFont(family="Segoe UI", size=13), text_color=("#64748b", "#94a3b8"))
         lbl_subtitle.pack(anchor="w", pady=(0, 20))
         
+        # Contenedor scrollable para las tarjetas de configuración
+        scroll_container = ctk.CTkScrollableFrame(self, fg_color="transparent", border_width=0)
+        scroll_container.pack(fill="both", expand=True, pady=(0, 15))
+
         # Card Credenciales
-        card_creds = ctk.CTkFrame(self, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+        card_creds = ctk.CTkFrame(scroll_container, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
         card_creds.pack(fill="x", pady=(0, 20), ipady=5)
         card_creds.grid_columnconfigure(1, weight=1)
         
@@ -37,26 +41,33 @@ class ConfigView(ctk.CTkFrame):
         ctk.CTkLabel(card_creds, text="Código de App:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=1, column=0, padx=20, pady=(0, 10), sticky="w")
         ctk.CTkEntry(card_creds, textvariable=self.controller.config_pass, show="*", font=self.font_text, height=36, fg_color=("#f8fafc", "#070a13"), border_color=("#cbd5e1", "#1e293b"), placeholder_text="Contraseña de 16 caracteres").grid(row=1, column=1, padx=20, pady=(0, 10), sticky="ew")
         
-        ctk.CTkLabel(card_creds, text="Proveedor de Correo:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=2, column=0, padx=20, pady=(0, 10), sticky="w")
-        provider_menu = ctk.CTkOptionMenu(card_creds, variable=self.controller.config_provider, values=list(self.controller.smtp_providers.keys()), font=self.font_text, height=36, fg_color=("#4f46e5", "#6366f1"), button_color=("#4338ca", "#4f46e5"), button_hover_color=("#3730a3", "#4338ca"))
-        provider_menu.grid(row=2, column=1, padx=20, pady=(0, 10), sticky="w")
-        
-        ctk.CTkLabel(card_creds, text="Retardo entre Envíos (s):", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=3, column=0, padx=20, pady=(0, 20), sticky="w")
-        delay_menu = ctk.CTkOptionMenu(card_creds, variable=self.controller.config_delay, values=["0", "1", "2", "3", "5", "10"], font=self.font_text, height=36, fg_color=("#4f46e5", "#6366f1"), button_color=("#4338ca", "#4f46e5"), button_hover_color=("#3730a3", "#4338ca"))
-        delay_menu.grid(row=3, column=1, padx=20, pady=(0, 20), sticky="w")
+        ctk.CTkLabel(card_creds, text="Nombre del Remitente:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=2, column=0, padx=20, pady=(0, 20), sticky="w")
+        ctk.CTkEntry(card_creds, textvariable=self.controller.config_sender_name, font=self.font_text, height=36, fg_color=("#f8fafc", "#070a13"), border_color=("#cbd5e1", "#1e293b"), placeholder_text="ej. SEMS Pro").grid(row=2, column=1, padx=20, pady=(0, 20), sticky="ew")
 
         # Card Plantilla
-        card_tpl = ctk.CTkFrame(self, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+        card_tpl = ctk.CTkFrame(scroll_container, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
         card_tpl.pack(fill="both", expand=True, pady=(0, 20))
         card_tpl.grid_columnconfigure(1, weight=1)
-        card_tpl.grid_rowconfigure(1, weight=1)
+        card_tpl.grid_rowconfigure(2, weight=1)
         
         ctk.CTkLabel(card_tpl, text="Asunto del Correo:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=0, column=0, padx=20, pady=(20, 10), sticky="w")
         ctk.CTkEntry(card_tpl, textvariable=self.controller.config_subject, font=self.font_text, height=36, fg_color=("#f8fafc", "#070a13"), border_color=("#cbd5e1", "#1e293b")).grid(row=0, column=1, padx=20, pady=(20, 10), sticky="ew")
         
-        ctk.CTkLabel(card_tpl, text="Cuerpo del Correo:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=1, column=0, padx=20, pady=(0, 20), sticky="nw")
+        ctk.CTkLabel(card_tpl, text="Logo de Empresa (Opcional):", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=1, column=0, padx=20, pady=(0, 10), sticky="w")
+        
+        logo_frame = ctk.CTkFrame(card_tpl, fg_color="transparent")
+        logo_frame.grid(row=1, column=1, padx=20, pady=(0, 10), sticky="ew")
+        logo_frame.grid_columnconfigure(0, weight=1)
+        
+        self.entry_logo = ctk.CTkEntry(logo_frame, textvariable=self.controller.config_logo_path, font=self.font_text, height=36, fg_color=("#f8fafc", "#070a13"), border_color=("#cbd5e1", "#1e293b"))
+        self.entry_logo.grid(row=0, column=0, sticky="ew", padx=(0, 10))
+        
+        btn_browse_logo = ctk.CTkButton(logo_frame, text="📁 Buscar", width=80, height=36, font=self.font_label, fg_color=("#4b5563", "#1e293b"), hover_color=("#374151", "#2d3748"), command=self.browse_logo)
+        btn_browse_logo.grid(row=0, column=1, sticky="e")
+        
+        ctk.CTkLabel(card_tpl, text="Cuerpo del Correo:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=2, column=0, padx=20, pady=(0, 20), sticky="nw")
         self.txt_body = ctk.CTkTextbox(card_tpl, font=self.font_text, fg_color=("#f8fafc", "#070a13"), border_color=("#cbd5e1", "#1e293b"), border_width=1, corner_radius=10)
-        self.txt_body.grid(row=1, column=1, padx=20, pady=(0, 20), sticky="nsew")
+        self.txt_body.grid(row=2, column=1, padx=20, pady=(0, 20), sticky="nsew")
         self.txt_body.insert("0.0", self.controller.initial_body)
         
         btn_save = ctk.CTkButton(self, text="💾 Guardar Configuración", font=ctk.CTkFont(family="Segoe UI", size=15, weight="bold"), fg_color=("#4f46e5", "#6366f1"), hover_color=("#4338ca", "#4f46e5"), height=48, corner_radius=12, command=self.save_settings)
@@ -82,10 +93,22 @@ class ConfigView(ctk.CTkFrame):
             self.controller._real_smtp_user, self.controller.config_pass.get(),
             provider["host"], str(provider["port"]),
             self.controller.config_subject.get(), body,
-            self.controller.config_delay.get()
+            send_delay=self.controller.config_delay.get(),
+            sender_name=self.controller.config_sender_name.get().strip() or "SEMS Pro",
+            logo_path=self.controller.config_logo_path.get().strip()
         )
         if success:
             messagebox.showinfo("Éxito", "Configuración guardada correctamente.")
             self.controller.config_user.set(mask_email(self.controller._real_smtp_user))
         else:
             messagebox.showerror("Error", "No se pudo guardar la configuración.")
+
+    def browse_logo(self):
+        from tkinter import filedialog
+        path = filedialog.askopenfilename(
+            parent=self,
+            title="Seleccionar Logo de la Empresa",
+            filetypes=[("Imágenes", "*.png *.jpg *.jpeg *.gif *.webp")]
+        )
+        if path:
+            self.controller.config_logo_path.set(path)

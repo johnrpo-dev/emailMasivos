@@ -24,8 +24,8 @@ El flujo operativo ha sido diseñado para completarse en **menos de 5 minutos**,
 | **3** | Selecciona la carpeta donde están los archivos PDF. | 10 segundos |
 | **4** | Presiona **"Iniciar Proceso"**. El sistema cifra, envía y limpia automáticamente. | Automático |
 
-### Gestión Inteligente de Errores
-Si un archivo falta o un correo rebota, el sistema **no se detiene**. Al finalizar genera un reporte visual con los envíos fallidos y ofrece un botón de **"Reintentar Fallidos"** que procesa únicamente los pendientes, sin duplicar correos ya enviados.
+### Gestión de Errores
+Si un archivo falta o un correo no se puede enviar, el sistema **no se detiene**. Al finalizar genera un reporte visual con el detalle de los envíos fallidos para que el operador pueda realizar las correcciones necesarias en el archivo origen de datos.
 
 ---
 
