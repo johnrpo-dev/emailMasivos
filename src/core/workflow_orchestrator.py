@@ -374,8 +374,10 @@ class WorkflowOrchestrator:
                     with lock:
                         if similar_pdf:
                             err_msg = f"PDF no encontrado ({id_archivo}) (Sugerencia: {similar_pdf})"
-                            if pdf_corrections is not None:
-                                pdf_corrections[record.get("id_archivo", "").strip()] = similar_pdf
+                            # NOTA: NO auto-aplicamos la sugerencia fuzzy a pdf_corrections.
+                            # El riesgo de enviar el documento de otro destinatario (ej. recibo001 vs recibo002)
+                            # es una violación directa de privacidad. La sugerencia se muestra al usuario
+                            # en la UI para que corrija manualmente el CSV y use "Reintentar Fallidos".
                         else:
                             err_msg = f"PDF no encontrado ({id_archivo})"
                             
@@ -408,9 +410,10 @@ class WorkflowOrchestrator:
                         })
                     continue
                 
-                # Crear ruta de archivo temporal segura (previene colisiones de procesos y aísla el directorio)
-                temp_dir = os.path.join(os.getcwd(), "data", "temp")
-                os.makedirs(temp_dir, exist_ok=True)
+                # Crear ruta de archivo temporal segura.
+                # Delegamos al OS la resolución del directorio temporal (tempfile.mkdtemp),
+                # que maneja correctamente contextos de privilegios elevados (QUAL-001).
+                temp_dir = tempfile.mkdtemp(prefix="sems_batch_")
                 fd, temp_pdf = tempfile.mkstemp(suffix=".pdf", prefix=f"sems_{worker_id}_", dir=temp_dir)
                 os.close(fd)
                 

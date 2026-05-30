@@ -256,11 +256,17 @@ class App(ctk.CTk):
     def _emergency_cleanup_temp_files(self):
         """Limpieza de emergencia: sobreescribe y elimina temporales sems_*.pdf."""
         try:
-            # Limpiar de ambas carpetas: la del sistema y la privada del espacio de trabajo
-            temp_dirs = [tempfile.gettempdir(), os.path.join(os.getcwd(), "data", "temp")]
+            system_temp = tempfile.gettempdir()
+            # Buscar archivos sems_*.pdf directamente en el temp del sistema
+            temp_dirs = [system_temp]
+            # También buscar en subdirectorios sems_batch_* creados por mkdtemp
+            for entry in os.listdir(system_temp):
+                if entry.startswith("sems_batch_"):
+                    candidate = os.path.join(system_temp, entry)
+                    if os.path.isdir(candidate):
+                        temp_dirs.append(candidate)
+            
             for t_dir in temp_dirs:
-                if not os.path.exists(t_dir):
-                    continue
                 for temp_file in glob.glob(os.path.join(t_dir, "sems_*.pdf")):
                     try:
                         size = os.path.getsize(temp_file)
@@ -269,6 +275,16 @@ class App(ctk.CTk):
                                 f.seek(0)
                                 f.write(os.urandom(size))
                         os.remove(temp_file)
+                    except Exception:
+                        pass
+            
+            # Limpiar los directorios sems_batch_* vacíos
+            for entry in os.listdir(system_temp):
+                if entry.startswith("sems_batch_"):
+                    candidate = os.path.join(system_temp, entry)
+                    try:
+                        if os.path.isdir(candidate) and not os.listdir(candidate):
+                            os.rmdir(candidate)
                     except Exception:
                         pass
         except Exception:

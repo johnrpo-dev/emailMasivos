@@ -184,10 +184,11 @@ class TestWorkflowOrchestrator(unittest.TestCase):
                         pdf_corrections=pdf_corrections
                     )
 
-        # Comprobar que se sugirió el archivo similar y se guardó en pdf_corrections
+        # Comprobar que se sugirió el archivo similar en el mensaje de error
         self.assertEqual(len(self.errores), 1)
         self.assertIn("Sugerencia: factura-123.pdf", self.errores[0])
-        self.assertEqual(pdf_corrections.get("factura_123.pdf"), "factura-123.pdf")
+        # La sugerencia NO debe auto-aplicarse a pdf_corrections (riesgo de privacidad NEW-001)
+        self.assertEqual(len(pdf_corrections), 0)
         self.assertEqual(len(self.records_fallidos), 1)
 
 if __name__ == '__main__':

@@ -6,13 +6,31 @@ from logging.handlers import RotatingFileHandler
 
 class PIIFilter(logging.Filter):
     """Filtro que redacta automáticamente secuencias numéricas (cédulas/documentos)
-    de los mensajes de log basándose en contexto (prefijos como CC, NIT, ID)
-    para prevenir exposición accidental de PII y evitar falsos positivos."""
-    _pattern = re.compile(r'(?i)(c\.c\.|cc|nit|id|c[eé]dula|documento)([\s.:-]*)(\d{6,11})\b')
+    de los mensajes de log usando dos estrategias complementarias:
+    1. Contextual: prefijos como CC, NIT, ID, cédula (precisión quirúrgica).
+    2. Catch-all: secuencias de 8+ dígitos sin contexto (red de seguridad).
+    También filtra record.args para cubrir formateo %-style."""
+    _contextual = re.compile(r'(?i)(c\.c\.|cc|nit|id|c[eé]dula|documento)([\s.:-]*)(\d{6,11})\b')
+    _catchall = re.compile(r'\b(\d{8,11})\b')
+    
+    def _redact(self, text):
+        """Aplica redacción contextual primero, luego catch-all sobre el resultado."""
+        if not isinstance(text, str):
+            return text
+        text = self._contextual.sub(r'\1\2[REDACTED]', text)
+        text = self._catchall.sub('[REDACTED]', text)
+        return text
     
     def filter(self, record):
+        # Redactar msg (cubre f-strings)
         if isinstance(record.msg, str):
-            record.msg = self._pattern.sub(r'\1\2[REDACTED]', record.msg)
+            record.msg = self._redact(record.msg)
+        # Redactar args (cubre %-style: logger.error("dato %s", cedula))
+        if record.args:
+            if isinstance(record.args, dict):
+                record.args = {k: self._redact(v) if isinstance(v, str) else v for k, v in record.args.items()}
+            elif isinstance(record.args, tuple):
+                record.args = tuple(self._redact(a) if isinstance(a, str) else a for a in record.args)
         return True
 
 

@@ -43,11 +43,28 @@ class ConfigManager:
                     config["smtp_user"] = creds.get("user", "")
                     config["smtp_password"] = creds.get("password", "")
                 else:
-                    # Fallback de compatibilidad para versiones anteriores que tenían smtp_user en config.json
+                    # Fallback de compatibilidad para versiones anteriores que tenían smtp_user en config.json.
+                    # Si encontramos datos legados, los migramos automáticamente a Keyring y limpiamos el JSON.
                     old_user = config.get("smtp_user", "")
                     if old_user:
                         pw = keyring.get_password(ConfigManager.SERVICE_NAME, old_user)
                         config["smtp_password"] = pw if pw else ""
+                        
+                        # Migración automática: persistir en el nuevo formato de Keyring
+                        if pw:
+                            creds = json.dumps({"user": old_user, "password": pw})
+                            keyring.set_password(ConfigManager.SERVICE_NAME, "smtp_credentials", creds)
+                            logger.info("Credenciales migradas automáticamente al nuevo formato de Keyring.")
+                        
+                        # Limpiar smtp_user del archivo JSON en disco
+                        if "smtp_user" in data:
+                            del data["smtp_user"]
+                            try:
+                                with open(ConfigManager.CONFIG_FILE, 'w', encoding='utf-8') as fw:
+                                    json.dump(data, fw, indent=4, ensure_ascii=False)
+                                logger.info("Campo 'smtp_user' eliminado de config.json tras migración.")
+                            except Exception as ew:
+                                logger.warning(f"No se pudo limpiar smtp_user de config.json: {ew}")
                     else:
                         config["smtp_password"] = ""
             except Exception as e:
