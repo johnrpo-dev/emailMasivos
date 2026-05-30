@@ -35,18 +35,25 @@ class ConfigManager:
             # Combinar datos cargados con defaults por si faltan claves
             config = {**default_config, **data}
             
-            # Obtener contraseña desde Windows Credential Manager
-            user = config.get("smtp_user", "")
-            if user:
-                try:
-                    pw = keyring.get_password(ConfigManager.SERVICE_NAME, user)
-                    config["smtp_password"] = pw if pw else ""
-                except Exception as e:
-                    logger.critical(f"Fallo crítico al acceder a la bóveda de credenciales del SO (Keyring): {e}")
-                    config["smtp_password"] = ""
-                    config["keyring_failed"] = True
-            else:
+            # Obtener credenciales seguras desde Windows Credential Manager (Keyring)
+            try:
+                creds_str = keyring.get_password(ConfigManager.SERVICE_NAME, "smtp_credentials")
+                if creds_str:
+                    creds = json.loads(creds_str)
+                    config["smtp_user"] = creds.get("user", "")
+                    config["smtp_password"] = creds.get("password", "")
+                else:
+                    # Fallback de compatibilidad para versiones anteriores que tenían smtp_user en config.json
+                    old_user = config.get("smtp_user", "")
+                    if old_user:
+                        pw = keyring.get_password(ConfigManager.SERVICE_NAME, old_user)
+                        config["smtp_password"] = pw if pw else ""
+                    else:
+                        config["smtp_password"] = ""
+            except Exception as e:
+                logger.critical(f"Fallo crítico al acceder a la bóveda de credenciales del SO (Keyring): {e}")
                 config["smtp_password"] = ""
+                config["keyring_failed"] = True
                 
             return config
             
@@ -58,7 +65,6 @@ class ConfigManager:
     def save_config(smtp_user, smtp_password, smtp_host, smtp_port, email_subject, email_body, send_delay=2, sender_name="SEMS Pro", logo_path=""):
         """Guarda la configuración actualizando el archivo y Keyring."""
         config = {
-            "smtp_user": smtp_user,
             "smtp_host": smtp_host,
             "smtp_port": int(smtp_port) if smtp_port else 587,
             "email_subject": email_subject,
@@ -79,9 +85,10 @@ class ConfigManager:
             except OSError:
                 logger.warning("No se pudieron restringir los permisos de config.json")
                 
-            # Guardar contraseña de forma segura en Windows Credential Manager
+            # Guardar credenciales de forma segura en Windows Credential Manager
             if smtp_user and smtp_password:
-                keyring.set_password(ConfigManager.SERVICE_NAME, smtp_user, smtp_password)
+                creds = json.dumps({"user": smtp_user, "password": smtp_password})
+                keyring.set_password(ConfigManager.SERVICE_NAME, "smtp_credentials", creds)
                 
             logger.info("Configuración y credenciales guardadas exitosamente.")
             return True

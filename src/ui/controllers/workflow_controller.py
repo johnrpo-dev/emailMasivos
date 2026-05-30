@@ -1,6 +1,7 @@
 # pyrefly: ignore [missing-import]
 import re
 import sys
+import os
 from tkinter import messagebox
 from src.core.workflow_orchestrator import WorkflowOrchestrator
 from src.ui.modals.results_modal import ResultsModal
@@ -52,7 +53,7 @@ class WorkflowController:
         def on_stats_update(total=None, success=None, failed=None):
             self.app.home_panel.update_monitor_stats(total=total, success=success, failed=failed)
 
-        def on_complete(errores, total, records_fallidos, email_corrections):
+        def on_complete(errores, total, records_fallidos, email_corrections, pdf_corrections=None):
             def _complete():
                 try:
                     LicenseManager.update_last_run()
@@ -68,7 +69,7 @@ class WorkflowController:
                         )
                     
                     if errores:
-                        self.show_results_modal(errores, total, records_fallidos, email_corrections)
+                        self.show_results_modal(errores, total, records_fallidos, email_corrections, pdf_corrections)
                     else:
                         messagebox.showinfo("Completado", "El proceso ha finalizado con éxito sin errores.")
                 finally:
@@ -88,9 +89,53 @@ class WorkflowController:
             records_to_process=records_to_process
         )
 
-    def show_results_modal(self, errores, total, records_fallidos, email_corrections=None):
+    def _sync_records_with_current_csv(self, records_to_sync):
+        """Recarga el archivo CSV en caliente y actualiza los campos de los registros
+        en memoria (como nombres de PDF o correos) si el usuario los corrigió manualmente en el archivo.
+        """
+        if not records_to_sync:
+            return
+            
+        csv_path = self.app.csv_path.get()
+        if not csv_path or not os.path.exists(csv_path):
+            return
+            
+        try:
+            from src.core.data_manager import DataManager
+            current_csv_records = DataManager.load_csv(csv_path)
+            
+            # Construir un mapa por clave única compuesta (cedula, id_servicio)
+            csv_map = {}
+            for r in current_csv_records:
+                ced = str(r.get("cedula", "")).strip().lower()
+                srv = str(r.get("id_servicio", "")).strip().lower()
+                csv_map[(ced, srv)] = r
+                
+            # Actualizar campos de los registros pasados en memoria
+            for record in records_to_sync:
+                ced = str(record.get("cedula", "")).strip().lower()
+                srv = str(record.get("id_servicio", "")).strip().lower()
+                
+                if (ced, srv) in csv_map:
+                    updated_r = csv_map[(ced, srv)]
+                    
+                    # Si el usuario modificó datos en el CSV, los sincronizamos en caliente
+                    if "id_archivo" in updated_r:
+                        record["id_archivo"] = updated_r["id_archivo"]
+                    if "email" in updated_r:
+                        record["email"] = updated_r["email"]
+                    if "cedula" in updated_r:
+                        record["cedula"] = updated_r["cedula"]
+                        
+            logger.info("Sincronización en caliente con el archivo CSV completada con éxito.")
+        except Exception as e:
+            logger.error(f"No se pudo sincronizar los registros con el CSV: {str(e)}")
+
+    def show_results_modal(self, errores, total, records_fallidos, email_corrections=None, pdf_corrections=None):
         if email_corrections is None:
             email_corrections = {}
+        if pdf_corrections is None:
+            pdf_corrections = {}
             
         def on_retry():
             self._retry_count += 1
@@ -102,6 +147,9 @@ class WorkflowController:
                 )
                 return
                 
+            # Sincronizar registros fallidos con posibles correcciones en el CSV antes de reintentar
+            self._sync_records_with_current_csv(records_fallidos)
+            
             self.app.home_panel.btn_start.configure(state="disabled", fg_color="#4b5563")
             self.app.home_panel.progress_bar.set(0)
             self.app.home_panel.lbl_status.configure(
@@ -110,17 +158,32 @@ class WorkflowController:
             self.execute_workflow(records_fallidos)
 
         def on_correct_and_retry():
+            # Sincronizar registros fallidos con posibles correcciones en el CSV antes de aplicar correcciones automáticas
+            self._sync_records_with_current_csv(records_fallidos)
+            
             corrected_records = []
             remaining_records = []
             
             for record in records_fallidos:
                 email_original = str(record.get("email", "")).strip()
                 email_masked = mask_email(email_original)
+                id_archivo_original = str(record.get("id_archivo", "")).strip()
+                
+                corrected = dict(record)
+                is_corrected = False
+                
                 if email_masked in email_corrections:
-                    corrected = dict(record)
                     corrected["email"] = email_corrections[email_masked]
-                    corrected_records.append(corrected)
                     logger.info(f"Email corregido: {email_masked} -> {mask_email(email_corrections[email_masked])}")
+                    is_corrected = True
+                    
+                if id_archivo_original in pdf_corrections:
+                    corrected["id_archivo"] = pdf_corrections[id_archivo_original]
+                    logger.info(f"PDF corregido: {id_archivo_original} -> {pdf_corrections[id_archivo_original]}")
+                    is_corrected = True
+                    
+                if is_corrected:
+                    corrected_records.append(corrected)
                 else:
                     remaining_records.append(record)
                     
@@ -138,5 +201,6 @@ class WorkflowController:
 
         ResultsModal(
             self.app, errores, total, records_fallidos, email_corrections,
-            on_retry=on_retry, on_correct_and_retry=on_correct_and_retry
+            on_retry=on_retry, on_correct_and_retry=on_correct_and_retry,
+            pdf_corrections=pdf_corrections
         )

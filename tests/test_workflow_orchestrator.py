@@ -141,5 +141,54 @@ class TestWorkflowOrchestrator(unittest.TestCase):
                 self.assertEqual(self.batch_record["envios"][0]["estado"], "error")
                 self.assertIn("sospechosa", self.batch_record["envios"][0]["detalles"])
 
+    @patch('src.core.workflow_orchestrator.EmailService')
+    def test_fuzzy_pdf_matching(self, mock_email_service_class):
+        """Verifica que si un archivo PDF no existe, se busque uno similar en disco y se sugiera."""
+        mock_service = MagicMock()
+        mock_email_service_class.return_value = mock_service
+
+        # Fila con archivo PDF que tiene un error de tipeo menor
+        record = {
+            "email": "test@gmail.com",
+            "id_archivo": "factura_123.pdf",
+            "id_servicio": "SER-003",
+            "cedula": "123456"
+        }
+
+        # Mockear os.listdir para simular que en el disco existe factura-123.pdf
+        mock_files = ["factura-123.pdf", "factura_456.pdf"]
+        
+        pdf_corrections = {}
+
+        with patch('os.path.isdir', return_value=True):
+            with patch('os.listdir', return_value=mock_files):
+                with patch('os.path.exists', return_value=False):
+                    self.orchestrator._process_chunk_worker(
+                        chunk_records=[record],
+                        worker_id=0,
+                        pdf_dir=self.pdf_dir,
+                        hmac_key=self.hmac_key,
+                        subject_template="Servicio {id_servicio}",
+                        batch_record=self.batch_record,
+                        errores=self.errores,
+                        records_fallidos=self.records_fallidos,
+                        on_progress=None,
+                        on_stats_update=None,
+                        on_log=None,
+                        lock=self.lock,
+                        completed_count=self.completed_count,
+                        success_count=self.success_count,
+                        failed_count=self.failed_count,
+                        total_validos=1,
+                        send_delay=0,
+                        pdf_corrections=pdf_corrections
+                    )
+
+        # Comprobar que se sugirió el archivo similar y se guardó en pdf_corrections
+        self.assertEqual(len(self.errores), 1)
+        self.assertIn("Sugerencia: factura-123.pdf", self.errores[0])
+        self.assertEqual(pdf_corrections.get("factura_123.pdf"), "factura-123.pdf")
+        self.assertEqual(len(self.records_fallidos), 1)
+
 if __name__ == '__main__':
     unittest.main()

@@ -94,6 +94,7 @@ class WorkflowOrchestrator:
             errores = []
             records_fallidos = []
             email_corrections = {}
+            pdf_corrections = {}
             
             # === FASE 1: Validación previa de emails (Sin conectar a SMTP aún) ===
             records_validos = self._pre_validate_emails(
@@ -111,7 +112,7 @@ class WorkflowOrchestrator:
                 batch_record["exitosos"] = 0
                 batch_record["fallidos"] = len(errores)
                 if on_complete:
-                    on_complete(errores, total, records_fallidos, email_corrections)
+                    on_complete(errores, total, records_fallidos, email_corrections, pdf_corrections)
                 return
             
             # === FASE 2: Envío de correos válidos en Paralelo ===
@@ -119,7 +120,8 @@ class WorkflowOrchestrator:
                 records_validos, pdf_dir, hmac_key, subject_template, 
                 batch_record, errores, records_fallidos, email_corrections,
                 len(records) - len(records_validos),
-                on_progress, on_stats_update, on_log, send_delay
+                on_progress, on_stats_update, on_log, send_delay,
+                pdf_corrections
             )
             
             # Consolidar totales del lote procesado
@@ -130,7 +132,7 @@ class WorkflowOrchestrator:
             if on_progress:
                 on_progress("¡Proceso masivo completado!", 1.0)
             if on_complete:
-                on_complete(errores, total, records_fallidos, email_corrections)
+                on_complete(errores, total, records_fallidos, email_corrections, pdf_corrections)
                 
         except Exception as e:
             logger.critical(f"Fallo fatal en el orquestador: {str(e)}")
@@ -139,7 +141,7 @@ class WorkflowOrchestrator:
             if on_progress:
                 on_progress("Error fatal en procesamiento.", 1.0)
             if on_complete:
-                on_complete([f"Error fatal: {str(e)}"], 0, [], {})
+                on_complete([f"Error fatal: {str(e)}"], 0, [], {}, {})
 
     def _hash_pii(self, value: str, hmac_key: bytes) -> str:
         """Helper para hash seguro HMAC-SHA256 de PII."""
@@ -207,7 +209,8 @@ class WorkflowOrchestrator:
 
     def _dispatch_workers(self, records_validos, pdf_dir, hmac_key, subject_template,
                           batch_record, errores, records_fallidos, email_corrections,
-                          valid_failed_count, on_progress, on_stats_update, on_log, send_delay=2):
+                          valid_failed_count, on_progress, on_stats_update, on_log, send_delay=2,
+                          pdf_corrections=None):
         """Fase 2: Dispatching concurrent workers in dynamic chunks."""
         if on_progress:
             on_progress("Iniciando envío masivo en paralelo...", 0.0)
@@ -235,13 +238,15 @@ class WorkflowOrchestrator:
                     self._process_chunk_worker, chunk, w_id, pdf_dir, hmac_key, 
                     subject_template, batch_record, errores, records_fallidos,
                     on_progress, on_stats_update, on_log, lock,
-                    completed_count, success_count, failed_count, total_validos, send_delay
+                    completed_count, success_count, failed_count, total_validos, send_delay,
+                    pdf_corrections
                 )
 
     def _process_chunk_worker(self, chunk_records, worker_id, pdf_dir, hmac_key, 
                               subject_template, batch_record, errores, records_fallidos,
                               on_progress, on_stats_update, on_log, lock,
-                              completed_count, success_count, failed_count, total_validos, send_delay=2):
+                              completed_count, success_count, failed_count, total_validos, send_delay=2,
+                              pdf_corrections=None):
         """Tarea concurrente individual de cada hilo para procesar su respectivo chunk."""
         email_service = EmailService()
         try:
@@ -328,8 +333,8 @@ class WorkflowOrchestrator:
                 input_pdf = os.path.join(pdf_dir, id_archivo_os)
                 
                 # Seguridad: Validar que la ruta resultante está estrictamente dentro del directorio esperado
-                real_input = os.path.realpath(input_pdf)
-                real_dir = os.path.realpath(pdf_dir)
+                real_input = os.path.normcase(os.path.realpath(input_pdf))
+                real_dir = os.path.normcase(os.path.realpath(pdf_dir))
                 if not real_input.startswith(real_dir + os.sep) and real_input != real_dir:
                     logger.error(f"Intento de path traversal detectado: {id_archivo}")
                     with lock:
@@ -353,14 +358,28 @@ class WorkflowOrchestrator:
                             "detalles": err_msg
                         })
                     continue
-                # Si pasa la validación perimetral, actualizamos el nombre del archivo al formato sanitizado
-                id_archivo = id_archivo_sanitized
-                input_pdf = os.path.join(pdf_dir, id_archivo)
+                # Si el archivo original con ruta relativa/absoluta existe físicamente en disco, lo usamos directamente.
+                # De lo contrario, usamos el nombre sanitizado en el directorio de PDFs.
+                original_pdf_path = os.path.realpath(os.path.join(pdf_dir, id_archivo_os))
+                if os.path.exists(original_pdf_path) and os.path.isfile(original_pdf_path):
+                    input_pdf = original_pdf_path
+                    id_archivo = id_archivo_sanitized  # Seguimos usando el nombre sanitizado para el adjunto
+                else:
+                    id_archivo = id_archivo_sanitized
+                    input_pdf = os.path.join(pdf_dir, id_archivo)
                 
                 if not os.path.exists(input_pdf):
-                    logger.error(f"Falta el archivo PDF: {os.path.basename(input_pdf)} (Destino: {mask_email(email)})")
+                    similar_pdf = self._find_similar_pdf(pdf_dir, id_archivo_base)
+                    
                     with lock:
-                        err_msg = f"PDF no encontrado ({id_archivo})"
+                        if similar_pdf:
+                            err_msg = f"PDF no encontrado ({id_archivo}) (Sugerencia: {similar_pdf})"
+                            if pdf_corrections is not None:
+                                pdf_corrections[record.get("id_archivo", "").strip()] = similar_pdf
+                        else:
+                            err_msg = f"PDF no encontrado ({id_archivo})"
+                            
+                        logger.error(f"Falta el archivo PDF: {os.path.basename(input_pdf)} (Destino: {mask_email(email)})")
                         errores.append(f"{mask_email(email)}: {err_msg}")
                         records_fallidos.append(record)
                         completed_count[0] += 1
@@ -368,7 +387,10 @@ class WorkflowOrchestrator:
                         if on_stats_update:
                             on_stats_update(failed=failed_count[0])
                         if on_log:
-                            on_log(f"✗ ERROR: PDF no encontrado para {mask_email(email)}")
+                            if similar_pdf:
+                                on_log(f"✗ ERROR: PDF no encontrado para {mask_email(email)} (Sugerencia: {similar_pdf})")
+                            else:
+                                on_log(f"✗ ERROR: PDF no encontrado para {mask_email(email)}")
                         count = completed_count[0]
                         progress = count / total_validos
                         if on_progress:
@@ -458,3 +480,62 @@ class WorkflowOrchestrator:
                         on_progress(f"Procesando {count} de {total_validos}: {email}", progress)
         finally:
             email_service.disconnect()
+
+    def _find_similar_pdf(self, pdf_dir: str, target_filename: str) -> str:
+        """Busca en el directorio de PDFs si existe algún archivo similar al buscado.
+        
+        Soporta:
+        1. Coincidencia exacta de nombre original (por si la sanitización lo cambió).
+        2. Coincidencia sin distinguir mayúsculas/minúsculas (case-insensitive).
+        3. Archivos sin extensión en el CSV pero con extensión en disco.
+        4. Coincidencia por similitud de caracteres (Levenshtein/SequenceMatcher).
+        """
+        if not pdf_dir or not os.path.isdir(pdf_dir):
+            return None
+            
+        try:
+            files = os.listdir(pdf_dir)
+        except Exception:
+            return None
+            
+        pdf_files = [f for f in files if f.lower().endswith('.pdf')]
+        if not pdf_files:
+            return None
+            
+        # 1. Coincidencia exacta o case-insensitive
+        target_clean = target_filename.replace('\\', '/').split('/')[-1]
+        for f in files:
+            if f.lower() == target_clean.lower():
+                return f
+                
+        # 2. Si no tiene extensión .pdf, probar añadiéndola
+        target_name = target_clean
+        if not target_name.lower().endswith('.pdf'):
+            target_name_with_ext = target_name + ".pdf"
+            for f in pdf_files:
+                if f.lower() == target_name_with_ext.lower():
+                    return f
+                    
+        # 3. Comparación por similitud de caracteres (SequenceMatcher)
+        import difflib
+        best_match = None
+        best_ratio = 0.0
+        
+        target_name_lower = target_name.lower()
+        if target_name_lower.endswith('.pdf'):
+            target_base = target_name_lower[:-4]
+        else:
+            target_base = target_name_lower
+            
+        for f in pdf_files:
+            f_base = f[:-4].lower()
+            ratio = difflib.SequenceMatcher(None, target_base, f_base).ratio()
+            if ratio > best_ratio:
+                best_ratio = ratio
+                best_match = f
+                
+        # Umbral del 75% de similitud para considerarlo una sugerencia válida
+        if best_ratio >= 0.75:
+            return best_match
+            
+        return None

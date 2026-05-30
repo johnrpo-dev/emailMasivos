@@ -214,25 +214,34 @@ class App(ctk.CTk):
         if sys.platform != "win32":
             return
         try:
-            safe_title = re.sub(r"[^a-zA-Z0-9áéíóúüñÁÉÍÓÚÜÑ .,!#@:_\-]", "", title)[:100]
-            safe_message = re.sub(r"[^a-zA-Z0-9áéíóúüñÁÉÍÓÚÜÑ .,!#@:_\-/]", "", message)[:250]
+            # Eliminamos la limpieza agresiva con regex porque pasamos datos por variables de entorno,
+            # aislando los datos de PowerShell y anulando el riesgo de inyección (SEC-002).
+            # Mantenemos un límite de longitud sensato.
+            safe_title = title[:100]
+            safe_message = message[:250]
             
             ps_code = (
                 '[void][System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms");'
                 '$n=New-Object System.Windows.Forms.NotifyIcon;'
                 '$n.Icon=[System.Drawing.SystemIcons]::Information;'
                 '$n.BalloonTipIcon="Info";'
-                f'$n.BalloonTipText="{safe_message}";'
-                f'$n.BalloonTipTitle="{safe_title}";'
+                '$n.BalloonTipText=$env:SEMS_NOTIF_MSG;'
+                '$n.BalloonTipTitle=$env:SEMS_NOTIF_TITLE;'
                 '$n.Visible=$True;'
                 '$n.ShowBalloonTip(5000)'
             )
+            
+            ps_env = os.environ.copy()
+            ps_env["SEMS_NOTIF_TITLE"] = safe_title
+            ps_env["SEMS_NOTIF_MSG"] = safe_message
+            
             subprocess.run(
                 ["powershell", "-NoProfile", "-Command", ps_code],
                 capture_output=True,
                 text=True,
                 creationflags=subprocess.CREATE_NO_WINDOW,
-                timeout=10
+                timeout=10,
+                env=ps_env
             )
         except Exception as e:
             logger.warning(f"No se pudo mostrar la notificación de Windows: {str(e)}")

@@ -5,13 +5,14 @@ from logging.handlers import RotatingFileHandler
 
 
 class PIIFilter(logging.Filter):
-    """Filtro que redacta automáticamente secuencias numéricas largas (cédulas/documentos)
-    de los mensajes de log para prevenir exposición accidental de PII."""
-    _pattern = re.compile(r'\b\d{7,}\b')
+    """Filtro que redacta automáticamente secuencias numéricas (cédulas/documentos)
+    de los mensajes de log basándose en contexto (prefijos como CC, NIT, ID)
+    para prevenir exposición accidental de PII y evitar falsos positivos."""
+    _pattern = re.compile(r'(?i)(c\.c\.|cc|nit|id|c[eé]dula|documento)([\s.:-]*)(\d{6,11})\b')
     
     def filter(self, record):
         if isinstance(record.msg, str):
-            record.msg = self._pattern.sub('[REDACTED]', record.msg)
+            record.msg = self._pattern.sub(r'\1\2[REDACTED]', record.msg)
         return True
 
 

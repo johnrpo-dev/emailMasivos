@@ -4,16 +4,19 @@ import re
 
 class ResultsModal(ctk.CTkToplevel):
     """Modal premium, modular y altamente visual para el Reporte de Errores y Reintentos."""
-    def __init__(self, parent, errores, total, records_fallidos, email_corrections=None, on_retry=None, on_correct_and_retry=None):
+    def __init__(self, parent, errores, total, records_fallidos, email_corrections=None, on_retry=None, on_correct_and_retry=None, pdf_corrections=None):
         super().__init__(parent)
         
         if email_corrections is None:
             email_corrections = {}
+        if pdf_corrections is None:
+            pdf_corrections = {}
             
         self.errores = errores
         self.total = total
         self.records_fallidos = records_fallidos
         self.email_corrections = email_corrections
+        self.pdf_corrections = pdf_corrections
         self.on_retry = on_retry
         self.on_correct_and_retry = on_correct_and_retry
         
@@ -92,7 +95,7 @@ class ResultsModal(ctk.CTkToplevel):
         ctk.CTkLabel(box_failed, text=str(len(self.errores)), font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold"), text_color=("#ef4444", "#f87171")).pack(pady=(0, 12))
         
         # 3. Aviso Inteligente de Correcciones Disponibles (Amber Glow)
-        if self.email_corrections:
+        if self.email_corrections or self.pdf_corrections:
             card_fix = ctk.CTkFrame(
                 self, corner_radius=12, 
                 fg_color=("#fffbeb", "#1c1407"), 
@@ -101,10 +104,10 @@ class ResultsModal(ctk.CTkToplevel):
             )
             card_fix.pack(fill="x", padx=30, pady=(0, 15))
             
-            fix_count = len(self.email_corrections)
+            fix_count = len(self.email_corrections) + len(self.pdf_corrections)
             lbl_fix = ctk.CTkLabel(
                 card_fix, 
-                text=f"✨ Se detectaron {fix_count} sugerencia(s) de corrección automática.\nPresione 'Corregir y Reintentar' para auto-reparar estos correos instantáneamente.",
+                text=f"✨ Se detectaron {fix_count} sugerencia(s) de corrección automática.\nPresione 'Corregir y Reintentar' para auto-repararlos e iniciar el reenvío.",
                 font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"), 
                 text_color=("#d97706", "#fef08a"), 
                 justify="center",
@@ -138,7 +141,7 @@ class ResultsModal(ctk.CTkToplevel):
         )
         self.btn_copy.pack(side="left", padx=5, expand=True)
         
-        if self.email_corrections:
+        if self.email_corrections or self.pdf_corrections:
             self.btn_correct = ctk.CTkButton(
                 btn_frame, text="✨ Corregir y Reintentar", command=self.handle_correct_and_retry,
                 width=200, height=45, corner_radius=12,
@@ -185,25 +188,32 @@ class ResultsModal(ctk.CTkToplevel):
         suggestion_val = ""
         
         detail_lower = detail_part.lower()
-        if "typo" in detail_lower or "quisiste decir" in detail_lower:
+        sug_match = re.search(r'\(sugerencia:\s*([^)]+)\)', detail_lower)
+        if sug_match:
+            is_suggestion = True
+            suggestion_val = sug_match.group(1).strip()
+            
+        if "no encontrado" in detail_lower or "pdf" in detail_lower:
+            if is_suggestion:
+                badge_text = "📄 PDF SUGERIDO"
+                badge_color = ("#e0f2fe", "#0c2340")
+                text_color = ("#0284c7", "#7dd3fc")
+                border_color = ("#7dd3fc", "#0369a1")
+            else:
+                badge_text = "📄 PDF FALTANTE"
+                badge_color = ("#ffedd5", "#2a1405")
+                text_color = ("#ea580c", "#fed7aa")
+                border_color = ("#fdba74", "#9a3412")
+        elif "typo" in detail_lower or "quisiste decir" in detail_lower or is_suggestion:
             badge_text = "💡 SUGERENCIA"
             badge_color = ("#fef3c7", "#291505")
             text_color = ("#d97706", "#fef08a")
             border_color = ("#fde047", "#854d0e")
-            is_suggestion = True
-            sug_match = re.search(r'\(sugerencia:\s*([^)]+)\)', detail_lower)
-            if sug_match:
-                suggestion_val = sug_match.group(1).strip()
         elif "servidores" in detail_lower or "dominio" in detail_lower or "dns" in detail_lower:
             badge_text = "🌐 DOMINIO INVÁLIDO"
             badge_color = ("#fee2e2", "#2d1616")
             text_color = ("#dc2626", "#fca5a5")
             border_color = ("#fca5a5", "#991b1b")
-        elif "no encontrado" in detail_lower or "pdf" in detail_lower:
-            badge_text = "📄 PDF FALTANTE"
-            badge_color = ("#ffedd5", "#2a1405")
-            text_color = ("#ea580c", "#fed7aa")
-            border_color = ("#fdba74", "#9a3412")
         elif "conexión" in detail_lower or "smtp" in detail_lower or "timeout" in detail_lower:
             badge_text = "📡 ERROR SMTP"
             badge_color = ("#f3e8ff", "#21152d")
@@ -245,9 +255,12 @@ class ResultsModal(ctk.CTkToplevel):
         clean_detail = re.sub(r'\(sugerencia:.*?\)', '', detail_part, flags=re.IGNORECASE).strip()
         
         if is_suggestion and suggestion_val:
+            is_pdf = "pdf" in detail_lower or "no encontrado" in detail_lower
+            desc_text = "El archivo PDF no fue encontrado con el nombre exacto especificado." if is_pdf else "El dominio ingresado contiene un error de ortografía común."
+            
             lbl_desc = ctk.CTkLabel(
                 content_frame, 
-                text="El dominio ingresado contiene un error de ortografía común.", 
+                text=desc_text, 
                 font=self.font_text, text_color=("#475569", "#94a3b8"),
                 justify="left", anchor="w"
             )
@@ -261,9 +274,10 @@ class ResultsModal(ctk.CTkToplevel):
             )
             sug_frame.pack(anchor="w", pady=(4, 2), padx=2)
             
+            pill_text = f"¿Usar: {suggestion_val}?" if is_pdf else f"¿Quisiste decir: {suggestion_val}?"
             lbl_sug_text = ctk.CTkLabel(
                 sug_frame, 
-                text=f"¿Quisiste decir: {suggestion_val}?", 
+                text=pill_text, 
                 font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
                 text_color=("#166534", "#4ade80"),
                 padx=12, pady=4
