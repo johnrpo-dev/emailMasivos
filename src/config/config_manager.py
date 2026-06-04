@@ -18,11 +18,13 @@ class ConfigManager:
             "smtp_password": "",
             "smtp_host": "smtp.gmail.com",
             "smtp_port": 587,
-            "email_subject": "Documento de {id_servicio}",
+            "email_subject": "Documento seguro adjunto",
             "email_body": "Estimado usuario,\n\nAdjunto encontrará su documento seguro. Para garantizar la máxima privacidad, este archivo ha sido cifrado con altos estándares de seguridad (AES-256).\n\nPara abrir el archivo, por favor utilice su clave de seguridad asignada.\n\nAtentamente,\nEl equipo.",
             "sender_name": "SEMS Pro",
             "send_delay": 2,
-            "logo_path": ""
+            "logo_path": "",
+            "pdf_password_prefix": "",
+            "pdf_password_suffix": ""
         }
         
         if not os.path.exists(ConfigManager.CONFIG_FILE):
@@ -79,7 +81,7 @@ class ConfigManager:
             return default_config
             
     @staticmethod
-    def save_config(smtp_user, smtp_password, smtp_host, smtp_port, email_subject, email_body, send_delay=2, sender_name="SEMS Pro", logo_path=""):
+    def save_config(smtp_user, smtp_password, smtp_host, smtp_port, email_subject, email_body, send_delay=2, sender_name="SEMS Pro", logo_path="", pdf_password_prefix="", pdf_password_suffix=""):
         """Guarda la configuración actualizando el archivo y Keyring."""
         config = {
             "smtp_host": smtp_host,
@@ -88,7 +90,9 @@ class ConfigManager:
             "email_body": email_body,
             "sender_name": sender_name,
             "send_delay": int(send_delay),
-            "logo_path": logo_path
+            "logo_path": logo_path,
+            "pdf_password_prefix": pdf_password_prefix,
+            "pdf_password_suffix": pdf_password_suffix
         }
         
         try:
@@ -98,14 +102,41 @@ class ConfigManager:
             
             # Restringir permisos del archivo: solo lectura/escritura para el propietario
             try:
-                os.chmod(ConfigManager.CONFIG_FILE, stat.S_IRUSR | stat.S_IWUSR)
-            except OSError:
-                logger.warning("No se pudieron restringir los permisos de config.json")
+                if os.name == 'nt':
+                    import subprocess
+                    creationflags = 0
+                    if hasattr(subprocess, 'CREATE_NO_WINDOW'):
+                        creationflags = subprocess.CREATE_NO_WINDOW
+                    subprocess.run(
+                        ["icacls", ConfigManager.CONFIG_FILE, "/inheritance:r", 
+                         "/grant:r", f"{os.environ.get('USERNAME', 'SYSTEM')}:(R,W)"],
+                        capture_output=True, check=True, creationflags=creationflags
+                    )
+                else:
+                    os.chmod(ConfigManager.CONFIG_FILE, stat.S_IRUSR | stat.S_IWUSR)
+            except Exception as e:
+                logger.warning(f"No se pudieron restringir los permisos de config.json: {e}")
                 
             # Guardar credenciales de forma segura en Windows Credential Manager
-            if smtp_user and smtp_password:
-                creds = json.dumps({"user": smtp_user, "password": smtp_password})
-                keyring.set_password(ConfigManager.SERVICE_NAME, "smtp_credentials", creds)
+            if smtp_user:
+                password_to_save = smtp_password
+                if password_to_save == "••••••••":
+                    # Intentar obtener la contraseña anterior del Keyring
+                    try:
+                        old_creds_str = keyring.get_password(ConfigManager.SERVICE_NAME, "smtp_credentials")
+                        if old_creds_str:
+                            old_creds = json.loads(old_creds_str)
+                            password_to_save = old_creds.get("password", "")
+                        else:
+                            # Buscar en el formato legado
+                            old_pw = keyring.get_password(ConfigManager.SERVICE_NAME, smtp_user)
+                            password_to_save = old_pw if old_pw else ""
+                    except Exception:
+                        password_to_save = ""
+                
+                if password_to_save:
+                    creds = json.dumps({"user": smtp_user, "password": password_to_save})
+                    keyring.set_password(ConfigManager.SERVICE_NAME, "smtp_credentials", creds)
                 
             logger.info("Configuración y credenciales guardadas exitosamente.")
             return True

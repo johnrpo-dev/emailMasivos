@@ -39,8 +39,7 @@ class App(ctk.CTk):
         default_pdf_dir = os.path.join(os.getcwd(), "data", "input")
         self.csv_path = ctk.StringVar()
         self.pdf_dir = ctk.StringVar(value=default_pdf_dir)
-        
-        # Variables de Configuración
+            # Variables de Configuración
         self._real_smtp_user = ""
         self.config_user = ctk.StringVar()
         self.config_pass = ctk.StringVar()
@@ -48,6 +47,8 @@ class App(ctk.CTk):
         self.config_sender_name = ctk.StringVar(value="SEMS Pro")
         self.config_delay = ctk.StringVar(value="2")
         self.config_logo_path = ctk.StringVar()
+        self.config_pdf_prefix = ctk.StringVar()
+        self.config_pdf_suffix = ctk.StringVar()
         
         # Proveedores SMTP preconfigurados
         self.smtp_providers = {
@@ -67,7 +68,7 @@ class App(ctk.CTk):
         
         # Inicializar controladores de UI
         self.workflow_controller = WorkflowController(self)
-
+ 
         # Cargar configuración e inicializar UI
         self.load_settings()
         self.setup_ui()
@@ -80,11 +81,18 @@ class App(ctk.CTk):
         config = ConfigManager.get_config()
         self._real_smtp_user = config.get("smtp_user", "")
         self.config_user.set(mask_email(self._real_smtp_user))
-        self.config_pass.set(config.get("smtp_password", ""))
+        
+        if config.get("smtp_password", ""):
+            self.config_pass.set("••••••••")
+        else:
+            self.config_pass.set("")
+            
         self.config_subject.set(config.get("email_subject", ""))
         self.config_sender_name.set(config.get("sender_name", "SEMS Pro"))
         self.config_delay.set(str(config.get("send_delay", 2)))
         self.config_logo_path.set(config.get("logo_path", ""))
+        self.config_pdf_prefix.set(config.get("pdf_password_prefix", ""))
+        self.config_pdf_suffix.set(config.get("pdf_password_suffix", ""))
         self.initial_body = config.get("email_body", "")
         
         # Detectar proveedor guardado por su host

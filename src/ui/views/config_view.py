@@ -70,6 +70,19 @@ class ConfigView(ctk.CTkFrame):
         self.txt_body.grid(row=2, column=1, padx=20, pady=(0, 20), sticky="nsew")
         self.txt_body.insert("0.0", self.controller.initial_body)
         
+        # Card Seguridad PDF
+        card_sec = ctk.CTkFrame(scroll_container, corner_radius=16, fg_color=("#ffffff", "#0e1322"), border_width=1, border_color=("#e2e8f0", "#1e293b"))
+        card_sec.pack(fill="x", pady=(0, 20), ipady=5)
+        card_sec.grid_columnconfigure(1, weight=1)
+        
+        ctk.CTkLabel(card_sec, text="Seguridad de Contraseñas PDF:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=0, column=0, columnspan=2, padx=20, pady=(15, 10), sticky="w")
+        
+        ctk.CTkLabel(card_sec, text="Prefijo de Contraseña:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=1, column=0, padx=20, pady=(0, 10), sticky="w")
+        ctk.CTkEntry(card_sec, textvariable=self.controller.config_pdf_prefix, font=self.font_text, height=36, fg_color=("#f8fafc", "#070a13"), border_color=("#cbd5e1", "#1e293b"), placeholder_text="ej. SEMS_").grid(row=1, column=1, padx=20, pady=(0, 10), sticky="ew")
+        
+        ctk.CTkLabel(card_sec, text="Sufijo de Contraseña:", font=self.font_label, text_color=("#334155", "#cbd5e1")).grid(row=2, column=0, padx=20, pady=(0, 15), sticky="w")
+        ctk.CTkEntry(card_sec, textvariable=self.controller.config_pdf_suffix, font=self.font_text, height=36, fg_color=("#f8fafc", "#070a13"), border_color=("#cbd5e1", "#1e293b"), placeholder_text="ej. _2026").grid(row=2, column=1, padx=20, pady=(0, 15), sticky="ew")
+        
         btn_save = ctk.CTkButton(self, text="💾 Guardar Configuración", font=ctk.CTkFont(family="Segoe UI", size=15, weight="bold"), fg_color=("#4f46e5", "#6366f1"), hover_color=("#4338ca", "#4f46e5"), height=48, corner_radius=12, command=self.save_settings)
         btn_save.pack(pady=0, fill="x")
         
@@ -95,7 +108,9 @@ class ConfigView(ctk.CTkFrame):
             self.controller.config_subject.get(), body,
             send_delay=self.controller.config_delay.get(),
             sender_name=self.controller.config_sender_name.get().strip() or "SEMS Pro",
-            logo_path=self.controller.config_logo_path.get().strip()
+            logo_path=self.controller.config_logo_path.get().strip(),
+            pdf_password_prefix=self.controller.config_pdf_prefix.get().strip(),
+            pdf_password_suffix=self.controller.config_pdf_suffix.get().strip()
         )
         if success:
             messagebox.showinfo("Éxito", "Configuración guardada correctamente.")

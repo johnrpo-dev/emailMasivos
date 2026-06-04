@@ -1,13 +1,29 @@
 import keyring
 import json
 import base64
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from src.utils.logger import logger
 
 class LicenseManager:
     SERVICE_NAME = "SEMS_Pro_Licensing"
-    PUBLIC_KEY_HEX = "caf90aeba6174a24891e0da1c366052e88fb3a60b28aa1c80301aab1856bd7b6"
+    # SEGURIDAD: Esta llave pública debe corresponder al par Ed25519 almacenado en
+    # %APPDATA%/SEMS_Pro/keys/. Si rota las llaves (ejecutando generar_licencia.py),
+    # actualice este valor con el nuevo hex que se muestra en la consola del generador.
+    # IMPORTANTE: El par de llaves anterior fue ROTADO por exposición accidental.
+    # Las licencias emitidas con el par anterior ya NO serán válidas tras esta actualización.
+    PUBLIC_KEY_HEX = "4a20327707072ab45f34c2029a62848a441910ffd076de2f5812c49bb5c0c988"
+
+    @staticmethod
+    def _parse_iso_datetime(iso_str: str) -> datetime:
+        """Parsea una cadena ISO y se asegura de retornar un objeto datetime en UTC (aware)."""
+        dt = datetime.fromisoformat(iso_str)
+        if dt.tzinfo is None:
+            # Si no tiene timezone, asumimos UTC por compatibilidad
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
+        return dt
 
     @staticmethod
     def verify_signature(license_base64: str) -> dict:
@@ -56,8 +72,8 @@ class LicenseManager:
                 logger.critical("SEGURIDAD: La clave de licencia almacenada es inválida o ha sido alterada.")
                 return False
 
-            now = datetime.now()
-            exp_date = datetime.fromisoformat(exp_date_str)
+            now = datetime.now(timezone.utc)
+            exp_date = LicenseManager._parse_iso_datetime(exp_date_str)
             
             # 1. ¿Licencia expirada?
             if now > exp_date:
@@ -66,7 +82,7 @@ class LicenseManager:
                 
             # 2. ¿Reloj de Windows alterado hacia el pasado? (Tolerancia de 2 horas)
             if last_run_str:
-                last_run = datetime.fromisoformat(last_run_str)
+                last_run = LicenseManager._parse_iso_datetime(last_run_str)
                 # Si el reloj actual está más de 2 horas por detrás del último arranque guardado
                 if now < (last_run - timedelta(hours=2)):
                     logger.error(f"Detección de alteración del reloj. Reloj actual: {now.isoformat()} | Último arranque registrado: {last_run_str}")
@@ -83,7 +99,7 @@ class LicenseManager:
         try:
             keyring.set_password(LicenseManager.SERVICE_NAME, "license_key", license_base64)
             keyring.set_password(LicenseManager.SERVICE_NAME, "expiration_date", payload["expires"])
-            keyring.set_password(LicenseManager.SERVICE_NAME, "last_run", datetime.now().isoformat())
+            keyring.set_password(LicenseManager.SERVICE_NAME, "last_run", datetime.now(timezone.utc).isoformat())
             logger.info("Licencia guardada y activada exitosamente en Keyring.")
             return True
         except Exception as e:
@@ -94,6 +110,6 @@ class LicenseManager:
     def update_last_run():
         """Actualiza la marca del último arranque exitoso para mantener consistencia horaria."""
         try:
-            keyring.set_password(LicenseManager.SERVICE_NAME, "last_run", datetime.now().isoformat())
+            keyring.set_password(LicenseManager.SERVICE_NAME, "last_run", datetime.now(timezone.utc).isoformat())
         except Exception as e:
             logger.warning(f"No se pudo actualizar last_run en Keyring: {str(e)}")

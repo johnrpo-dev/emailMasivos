@@ -149,6 +149,19 @@ class WorkflowOrchestrator:
             return ""
         return hmac.new(hmac_key, value.encode(), hashlib.sha256).hexdigest()
 
+    def _register_envio(self, batch_record, email, cedula, id_archivo, id_servicio, hmac_key, estado, detalles):
+        """Registra un envío individual en el historial efímero del lote (enmascarado y con hash)."""
+        batch_record["envios"].append({
+            "email": mask_email(email) if email else "Desconocido",
+            "email_hash": self._hash_pii(email.strip().lower() if email else "", hmac_key),
+            "id_archivo": os.path.basename(id_archivo) if id_archivo else "Desconocido",
+            "id_servicio": id_servicio,
+            "cedula": f"***{cedula[-3:]}" if (cedula and len(cedula) >= 3) else "***",
+            "cedula_hash": self._hash_pii(cedula.strip() if cedula else "", hmac_key),
+            "estado": estado,
+            "detalles": detalles
+        })
+
     def _pre_validate_emails(self, records, hmac_key, batch_record, errores, 
                              records_fallidos, email_corrections, 
                              on_stats_update, on_log, on_progress):
@@ -181,9 +194,10 @@ class WorkflowOrchestrator:
                 if on_stats_update:
                     on_stats_update(failed=valid_failed_count)
                 
+                # Saneamiento PII: Enmascarar sugerencia en errores públicos
                 msg = f"{mask_email(email)}: {validation.message}"
                 if validation.suggestion:
-                    msg += f" (Sugerencia: {validation.suggestion})"
+                    msg += f" (Sugerencia: {mask_email(validation.suggestion)})"
                     email_corrections[mask_email(email)] = validation.suggestion
                 errores.append(msg)
                 records_fallidos.append(record)
@@ -191,17 +205,11 @@ class WorkflowOrchestrator:
                 if on_log:
                     on_log(f"✗ RECHAZADO: {mask_email(email)} ({validation.message})")
                 
-                # Registrar en historial efímero enmascarado
-                batch_record["envios"].append({
-                    "email": mask_email(email),
-                    "email_hash": self._hash_pii(email.strip().lower(), hmac_key),
-                    "id_archivo": id_archivo,
-                    "id_servicio": id_servicio,
-                    "cedula": f"***{cedula[-3:]}" if len(cedula) >= 3 else "***",
-                    "cedula_hash": self._hash_pii(cedula.strip(), hmac_key),
-                    "estado": "error",
-                    "detalles": f"Fallo de validación: {validation.message}"
-                })
+                # Registrar usando el helper unificado
+                self._register_envio(
+                    batch_record, email, cedula, id_archivo, id_servicio, hmac_key,
+                    "error", f"Fallo de validación: {validation.message}"
+                )
             else:
                 records_validos.append(record)
                 
@@ -242,6 +250,24 @@ class WorkflowOrchestrator:
                     pdf_corrections
                 )
 
+    def _sanitize_error(self, exception: Exception) -> str:
+        """Sanitiza mensajes de error de SMTP/Red para evitar fugas de información interna (como IPs o hosts)."""
+        error_msg = str(exception)
+        error_msg_lower = error_msg.lower()
+        if "authentication unsuccessful" in error_msg_lower or "535" in error_msg_lower:
+            return "Error de autenticación SMTP. Verifique sus credenciales."
+        if "connection refused" in error_msg_lower or "timed out" in error_msg_lower or "timeout" in error_msg_lower:
+            return "Error de conexión. No se pudo establecer contacto con el servidor SMTP."
+        if "starttls" in error_msg_lower:
+            return "Conexión SMTP abortada por falta de soporte seguro (STARTTLS) en el servidor."
+        if "not found" in error_msg_lower or "no se encontró" in error_msg_lower:
+            return "El archivo PDF adjunto no fue encontrado."
+        if "smtp" in error_msg_lower:
+            return "Error en el servidor de correo SMTP al procesar la solicitud."
+            
+        # Si es un error general, omitimos detalles de red/servidor del string
+        return "Error inesperado al procesar o enviar el correo."
+
     def _process_chunk_worker(self, chunk_records, worker_id, pdf_dir, hmac_key, 
                               subject_template, batch_record, errores, records_fallidos,
                               on_progress, on_stats_update, on_log, lock,
@@ -253,236 +279,245 @@ class WorkflowOrchestrator:
             email_service.connect()
         except Exception as e:
             logger.error(f"Hilo {worker_id} no pudo conectar a SMTP: {str(e)}")
+            err_msg = self._sanitize_error(e)
             with lock:
                 for rec in chunk_records:
-                    err_msg = f"Error de conexión SMTP ({str(e)})"
-                    errores.append(f"{mask_email(rec.get('email'))}: {err_msg}")
+                    rec_email = rec.get('email', '')
+                    errores.append(f"{mask_email(rec_email)}: {err_msg}")
                     records_fallidos.append(rec)
                     completed_count[0] += 1
                     failed_count[0] += 1
                     if on_stats_update:
                         on_stats_update(failed=failed_count[0])
                     if on_log:
-                        on_log(f"✗ ERROR HILO {worker_id}: {mask_email(rec.get('email'))} (Fallo conexión SMTP)")
+                        on_log(f"✗ ERROR HILO {worker_id}: {mask_email(rec_email)} (Fallo conexión SMTP)")
                     
                     count = completed_count[0]
                     progress = count / total_validos
                     if on_progress:
-                        on_progress(f"Procesando {count} de {total_validos}...", progress)
+                        on_progress(f"Procesando {count} de {total_validos}: {mask_email(rec_email)} (Fallo)", progress)
                     
                     # Registrar error en historial efímero
-                    rec_email = str(rec.get("email", "")).strip()
-                    rec_file = str(rec.get("id_archivo", "")).strip()
-                    rec_srv = str(rec.get("id_servicio", "")).strip()
-                    rec_ced = str(rec.get("cedula", "")).strip()
-                    batch_record["envios"].append({
-                        "email": mask_email(rec_email),
-                        "email_hash": self._hash_pii(rec_email.strip().lower(), hmac_key),
-                        "id_archivo": os.path.basename(rec_file),
-                        "id_servicio": rec_srv,
-                        "cedula": f"***{rec_ced[-3:]}" if len(rec_ced) >= 3 else "***",
-                        "cedula_hash": self._hash_pii(rec_ced.strip(), hmac_key),
-                        "estado": "error",
-                        "detalles": err_msg
-                    })
+                    self._register_envio(
+                        batch_record, rec_email, rec.get("cedula", ""),
+                        rec.get("id_archivo", ""), rec.get("id_servicio", ""),
+                        hmac_key, "error", err_msg
+                    )
             return
         
         try:
+            # Cargar configuraciones de contraseña PDF una vez por worker
+            config = ConfigManager.get_config()
+            pwd_prefix = config.get("pdf_password_prefix", "")
+            pwd_suffix = config.get("pdf_password_suffix", "")
+            
             for record in chunk_records:
-                email = str(record.get("email", "")).strip()
-                id_archivo = str(record.get("id_archivo", "")).strip()
-                id_servicio = str(record.get("id_servicio", "")).strip()
-                cedula = str(record.get("cedula", "")).strip()
-                
-                if not email or not id_archivo or not cedula:
-                    with lock:
-                        completed_count[0] += 1
-                        failed_count[0] += 1
-                        if on_stats_update:
-                            on_stats_update(failed=failed_count[0])
-                        if on_log:
-                            on_log("✗ OMITIDO: Faltan datos en el registro (email, id_archivo o cedula vacíos).")
-                        count = completed_count[0]
-                        progress = count / total_validos
-                        if on_progress:
-                            on_progress(f"Procesando {count} de {total_validos}...", progress)
-                        
-                        batch_record["envios"].append({
-                            "email": mask_email(email) if email else "Desconocido",
-                            "email_hash": self._hash_pii(email.strip().lower() if email else "", hmac_key),
-                            "id_archivo": os.path.basename(id_archivo) if id_archivo else "Desconocido",
-                            "id_servicio": id_servicio,
-                            "cedula": f"***{cedula[-3:]}" if len(cedula) >= 3 else "***",
-                            "cedula_hash": self._hash_pii(cedula.strip(), hmac_key),
-                            "estado": "error",
-                            "detalles": "Datos obligatorios incompletos en fila CSV"
-                        })
-                    continue
-                
-                # Seguridad: Normalizar separadores de ruta para compatibilidad multiplataforma
-                # Esto asegura que barras invertidas de Windows se traten como separadores en cualquier OS
-                id_archivo_clean = id_archivo.replace('\\', '/')
-                id_archivo_base = os.path.basename(id_archivo_clean)
-                id_archivo_sanitized = re.sub(r'[^\w.\- ]', '_', id_archivo_base)
-                if not id_archivo_sanitized.lower().endswith(".pdf"):
-                    id_archivo_sanitized += ".pdf"
-                
-                # Para la validación perimetral de Path Traversal (defensa en profundidad),
-                # usamos la ruta original mapeada a los separadores nativos del OS actual.
-                id_archivo_os = id_archivo.replace('\\', os.sep).replace('/', os.sep)
-                input_pdf = os.path.join(pdf_dir, id_archivo_os)
-                
-                # Seguridad: Validar que la ruta resultante está estrictamente dentro del directorio esperado
-                real_input = os.path.normcase(os.path.realpath(input_pdf))
-                real_dir = os.path.normcase(os.path.realpath(pdf_dir))
-                if not real_input.startswith(real_dir + os.sep) and real_input != real_dir:
-                    logger.error(f"Intento de path traversal detectado: {id_archivo}")
-                    with lock:
-                        err_msg = f"Ruta de archivo sospechosa activa bloqueada ({id_archivo})"
-                        errores.append(f"{mask_email(email)}: {err_msg}")
-                        records_fallidos.append(record)
-                        completed_count[0] += 1
-                        failed_count[0] += 1
-                        if on_stats_update:
-                            on_stats_update(failed=failed_count[0])
-                        if on_log:
-                            on_log(f"✗ SEGURIDAD: Path traversal bloqueado para {mask_email(email)}")
-                        batch_record["envios"].append({
-                            "email": mask_email(email),
-                            "email_hash": self._hash_pii(email.strip().lower(), hmac_key),
-                            "id_archivo": id_archivo,
-                            "id_servicio": id_servicio,
-                            "cedula": f"***{cedula[-3:]}" if len(cedula) >= 3 else "***",
-                            "cedula_hash": self._hash_pii(cedula.strip(), hmac_key),
-                            "estado": "error",
-                            "detalles": err_msg
-                        })
-                    continue
-                # Si el archivo original con ruta relativa/absoluta existe físicamente en disco, lo usamos directamente.
-                # De lo contrario, usamos el nombre sanitizado en el directorio de PDFs.
-                original_pdf_path = os.path.realpath(os.path.join(pdf_dir, id_archivo_os))
-                if os.path.exists(original_pdf_path) and os.path.isfile(original_pdf_path):
-                    input_pdf = original_pdf_path
-                    id_archivo = id_archivo_sanitized  # Seguimos usando el nombre sanitizado para el adjunto
-                else:
-                    id_archivo = id_archivo_sanitized
-                    input_pdf = os.path.join(pdf_dir, id_archivo)
-                
-                if not os.path.exists(input_pdf):
-                    similar_pdf = self._find_similar_pdf(pdf_dir, id_archivo_base)
-                    
-                    with lock:
-                        if similar_pdf:
-                            err_msg = f"PDF no encontrado ({id_archivo}) (Sugerencia: {similar_pdf})"
-                            # NOTA: NO auto-aplicamos la sugerencia fuzzy a pdf_corrections.
-                            # El riesgo de enviar el documento de otro destinatario (ej. recibo001 vs recibo002)
-                            # es una violación directa de privacidad. La sugerencia se muestra al usuario
-                            # en la UI para que corrija manualmente el CSV y use "Reintentar Fallidos".
-                        else:
-                            err_msg = f"PDF no encontrado ({id_archivo})"
-                            
-                        logger.error(f"Falta el archivo PDF: {os.path.basename(input_pdf)} (Destino: {mask_email(email)})")
-                        errores.append(f"{mask_email(email)}: {err_msg}")
-                        records_fallidos.append(record)
-                        completed_count[0] += 1
-                        failed_count[0] += 1
-                        if on_stats_update:
-                            on_stats_update(failed=failed_count[0])
-                        if on_log:
-                            if similar_pdf:
-                                on_log(f"✗ ERROR: PDF no encontrado para {mask_email(email)} (Sugerencia: {similar_pdf})")
-                            else:
-                                on_log(f"✗ ERROR: PDF no encontrado para {mask_email(email)}")
-                        count = completed_count[0]
-                        progress = count / total_validos
-                        if on_progress:
-                            on_progress(f"Procesando {count} de {total_validos}: {email} (Omitido)", progress)
-                        
-                        batch_record["envios"].append({
-                            "email": mask_email(email),
-                            "email_hash": self._hash_pii(email.strip().lower(), hmac_key),
-                            "id_archivo": id_archivo,
-                            "id_servicio": id_servicio,
-                            "cedula": f"***{cedula[-3:]}" if len(cedula) >= 3 else "***",
-                            "cedula_hash": self._hash_pii(cedula.strip(), hmac_key),
-                            "estado": "error",
-                            "detalles": err_msg
-                        })
-                    continue
-                
-                # Crear ruta de archivo temporal segura.
-                # Delegamos al OS la resolución del directorio temporal (tempfile.mkdtemp),
-                # que maneja correctamente contextos de privilegios elevados (QUAL-001).
-                temp_dir = tempfile.mkdtemp(prefix="sems_batch_")
-                fd, temp_pdf = tempfile.mkstemp(suffix=".pdf", prefix=f"sems_{worker_id}_", dir=temp_dir)
-                os.close(fd)
-                
-                try:
-                    # Cifrado AES-256
-                    PDFCrypto.encrypt_pdf(input_pdf, temp_pdf, cedula)
-                    
-                    # Formatear asunto dinámico
-                    subject = subject_template.replace("{id_servicio}", id_servicio)
-                    
-                    # Envío SMTP seguro
-                    email_service.send_email_with_attachment(email, subject, temp_pdf, filename_override=id_archivo)
-                    with lock:
-                        success_count[0] += 1
-                        if on_stats_update:
-                            on_stats_update(success=success_count[0])
-                        if on_log:
-                            on_log(f"✓ ENVIADO: {mask_email(email)} - PDF Cifrado")
-                        
-                        batch_record["envios"].append({
-                            "email": mask_email(email),
-                            "email_hash": self._hash_pii(email.strip().lower(), hmac_key),
-                            "id_archivo": id_archivo,
-                            "id_servicio": id_servicio,
-                            "cedula": f"***{cedula[-3:]}" if len(cedula) >= 3 else "***",
-                            "cedula_hash": self._hash_pii(cedula.strip(), hmac_key),
-                            "estado": "exito",
-                            "detalles": None
-                        })
-                except Exception as e:
-                    logger.error(f"Fallo de envío con {mask_email(email)}: {str(e)}")
-                    with lock:
-                        err_msg = str(e)
-                        errores.append(f"{mask_email(email)}: Error ({err_msg})")
-                        records_fallidos.append(record)
-                        failed_count[0] += 1
-                        if on_stats_update:
-                            on_stats_update(failed=failed_count[0])
-                        if on_log:
-                            on_log(f"✗ ERROR: {mask_email(email)} - {err_msg}")
-                        
-                        batch_record["envios"].append({
-                            "email": mask_email(email),
-                            "email_hash": self._hash_pii(email.strip().lower(), hmac_key),
-                            "id_archivo": id_archivo,
-                            "id_servicio": id_servicio,
-                            "cedula": f"***{cedula[-3:]}" if len(cedula) >= 3 else "***",
-                            "cedula_hash": self._hash_pii(cedula.strip(), hmac_key),
-                            "estado": "error",
-                            "detalles": err_msg
-                        })
-                finally:
-                    # Borrado seguro síncrono (previene archivos huérfanos al cerrar la app)
-                    if os.path.exists(temp_pdf):
-                        PDFCrypto.secure_cleanup(temp_pdf)
-                    
-                    # Throttling: Aplicar retardo siempre después de cada intento de envío (éxito o fallo)
-                    # para proteger la reputación SMTP del remitente.
-                    if send_delay > 0:
-                        time.sleep(send_delay)
-                
-                with lock:
-                    completed_count[0] += 1
-                    count = completed_count[0]
-                    progress = count / total_validos
-                    if on_progress:
-                        on_progress(f"Procesando {count} de {total_validos}: {email}", progress)
+                self._process_single_record(
+                    record, worker_id, email_service, pdf_dir, hmac_key,
+                    subject_template, batch_record, errores, records_fallidos,
+                    on_progress, on_stats_update, on_log, lock,
+                    completed_count, success_count, failed_count, total_validos, send_delay,
+                    pdf_corrections, pwd_prefix, pwd_suffix
+                )
         finally:
             email_service.disconnect()
+
+    def _process_single_record(self, record, worker_id, email_service, pdf_dir, hmac_key,
+                               subject_template, batch_record, errores, records_fallidos,
+                               on_progress, on_stats_update, on_log, lock,
+                               completed_count, success_count, failed_count, total_validos, send_delay,
+                               pdf_corrections, pwd_prefix, pwd_suffix):
+        """Procesa y envía un único registro del lote de envíos."""
+        email = str(record.get("email", "")).strip()
+        id_archivo = str(record.get("id_archivo", "")).strip()
+        id_servicio = str(record.get("id_servicio", "")).strip()
+        cedula = str(record.get("cedula", "")).strip()
+        
+        if not email or not id_archivo or not cedula:
+            with lock:
+                completed_count[0] += 1
+                failed_count[0] += 1
+                if on_stats_update:
+                    on_stats_update(failed=failed_count[0])
+                if on_log:
+                    on_log("✗ OMITIDO: Faltan datos en el registro (email, id_archivo o cedula vacíos).")
+                count = completed_count[0]
+                progress = count / total_validos
+                if on_progress:
+                    on_progress(f"Procesando {count} de {total_validos}: Omitido (Datos incompletos)", progress)
+                
+                self._register_envio(
+                    batch_record, email, cedula, id_archivo, id_servicio, hmac_key,
+                    "error", "Datos obligatorios incompletos en fila CSV"
+                )
+            return
+
+        # Resolver la ruta física de entrada para el PDF
+        input_pdf, id_archivo_sanitized, resolve_err = self._resolve_pdf_path(id_archivo, pdf_dir)
+        if resolve_err:
+            with lock:
+                errores.append(f"{mask_email(email)}: {resolve_err}")
+                records_fallidos.append(record)
+                completed_count[0] += 1
+                failed_count[0] += 1
+                if on_stats_update:
+                    on_stats_update(failed=failed_count[0])
+                if on_log:
+                    on_log(f"✗ SEGURIDAD: {resolve_err} para {mask_email(email)}")
+                count = completed_count[0]
+                progress = count / total_validos
+                if on_progress:
+                    on_progress(f"Procesando {count} de {total_validos}: {mask_email(email)} (Error)", progress)
+                
+                self._register_envio(
+                    batch_record, email, cedula, id_archivo, id_servicio, hmac_key,
+                    "error", resolve_err
+                )
+            return
+
+        # Verificar si el archivo PDF existe físicamente
+        if not os.path.exists(input_pdf):
+            similar_pdf = self._find_similar_pdf(pdf_dir, os.path.basename(id_archivo.replace('\\', '/')))
+            
+            with lock:
+                if similar_pdf:
+                    err_msg = f"PDF no encontrado ({id_archivo_sanitized}) (Sugerencia: {similar_pdf})"
+                else:
+                    err_msg = f"PDF no encontrado ({id_archivo_sanitized})"
+                    
+                logger.error(f"Falta el archivo PDF: {os.path.basename(input_pdf)} (Destino: {mask_email(email)})")
+                errores.append(f"{mask_email(email)}: {err_msg}")
+                records_fallidos.append(record)
+                completed_count[0] += 1
+                failed_count[0] += 1
+                if on_stats_update:
+                    on_stats_update(failed=failed_count[0])
+                if on_log:
+                    if similar_pdf:
+                        on_log(f"✗ ERROR: PDF no encontrado para {mask_email(email)} (Sugerencia: {similar_pdf})")
+                    else:
+                        on_log(f"✗ ERROR: PDF no encontrado para {mask_email(email)}")
+                count = completed_count[0]
+                progress = count / total_validos
+                if on_progress:
+                    on_progress(f"Procesando {count} de {total_validos}: {mask_email(email)} (Omitido)", progress)
+                
+                self._register_envio(
+                    batch_record, email, cedula, id_archivo_sanitized, id_servicio, hmac_key,
+                    "error", err_msg
+                )
+            return
+
+        # Crear directorio temporal único e independiente
+        temp_dir = tempfile.mkdtemp(prefix="sems_batch_")
+        fd, temp_pdf = tempfile.mkstemp(suffix=".pdf", prefix=f"sems_{worker_id}_", dir=temp_dir)
+        os.close(fd)
+        
+        try:
+            # Construir la contraseña fortalecida
+            pdf_password = f"{pwd_prefix}{cedula}{pwd_suffix}"
+            
+            # Cifrado y envío
+            self._encrypt_and_send(
+                input_pdf, temp_pdf, pdf_password, email, id_servicio, id_archivo_sanitized,
+                subject_template, email_service, batch_record, hmac_key, record, lock,
+                success_count, failed_count, errores, records_fallidos, on_stats_update, on_log
+            )
+        except Exception as e:
+            logger.error(f"Fallo de procesamiento con {mask_email(email)}: {str(e)}")
+            err_msg = self._sanitize_error(e)
+            with lock:
+                errores.append(f"{mask_email(email)}: {err_msg}")
+                records_fallidos.append(record)
+                failed_count[0] += 1
+                if on_stats_update:
+                    on_stats_update(failed=failed_count[0])
+                if on_log:
+                    on_log(f"✗ ERROR: {mask_email(email)} - {err_msg}")
+                
+                self._register_envio(
+                    batch_record, email, cedula, id_archivo_sanitized, id_servicio, hmac_key,
+                    "error", err_msg
+                )
+        finally:
+            # Borrado seguro síncrono del archivo PDF temporal
+            if os.path.exists(temp_pdf):
+                PDFCrypto.secure_cleanup(temp_pdf)
+            # Limpieza del directorio temporal contenedor vacío
+            if os.path.exists(temp_dir):
+                try:
+                    os.rmdir(temp_dir)
+                except Exception as ex:
+                    logger.warning(f"No se pudo eliminar directorio temporal {temp_dir}: {str(ex)}")
+            
+            # Throttling
+            if send_delay > 0:
+                time.sleep(send_delay)
+        
+        with lock:
+            completed_count[0] += 1
+            count = completed_count[0]
+            progress = count / total_validos
+            if on_progress:
+                on_progress(f"Procesando {count} de {total_validos}: {mask_email(email)}", progress)
+
+    def _resolve_pdf_path(self, id_archivo: str, pdf_dir: str):
+        """Sanitiza y verifica el archivo PDF de entrada contra ataques de Path Traversal.
+        
+        Retorna (ruta_completa, archivo_sanitizado, error_msg).
+        """
+        # Normalizar separadores
+        id_archivo_clean = id_archivo.replace('\\', '/')
+        id_archivo_base = os.path.basename(id_archivo_clean)
+        id_archivo_sanitized = re.sub(r'[^\w.\- ]', '_', id_archivo_base)
+        if not id_archivo_sanitized.lower().endswith(".pdf"):
+            id_archivo_sanitized += ".pdf"
+            
+        id_archivo_os = id_archivo.replace('\\', os.sep).replace('/', os.sep)
+        input_pdf = os.path.join(pdf_dir, id_archivo_os)
+        
+        # Validar Path Traversal
+        real_input = os.path.normcase(os.path.realpath(input_pdf))
+        real_dir = os.path.normcase(os.path.realpath(pdf_dir))
+        if not real_input.startswith(real_dir + os.sep) and real_input != real_dir:
+            logger.error(f"Intento de path traversal detectado: {id_archivo}")
+            return None, id_archivo_sanitized, f"Ruta de archivo sospechosa activa bloqueada ({id_archivo})"
+            
+        # Si existe físicamente con su ruta original, resolver a esa
+        original_pdf_path = os.path.realpath(os.path.join(pdf_dir, id_archivo_os))
+        if os.path.exists(original_pdf_path) and os.path.isfile(original_pdf_path):
+            return original_pdf_path, id_archivo_sanitized, None
+            
+        # De lo contrario usar el nombre sanitizado
+        return os.path.join(pdf_dir, id_archivo_sanitized), id_archivo_sanitized, None
+
+    def _encrypt_and_send(self, input_pdf, temp_pdf, pdf_password, email, id_servicio, id_archivo_sanitized,
+                           subject_template, email_service, batch_record, hmac_key, record, lock,
+                           success_count, failed_count, errores, records_fallidos, on_stats_update, on_log):
+        """Aplica cifrado y envía el correo usando el servicio SMTP."""
+        # Cifrado AES-256
+        PDFCrypto.encrypt_pdf(input_pdf, temp_pdf, pdf_password)
+        
+        # Formatear asunto dinámico
+        if "{id_servicio}" in subject_template:
+            subject = subject_template.replace("{id_servicio}", id_servicio)
+        else:
+            subject = f"{subject_template.strip()} - {id_servicio}"
+            
+        # Envío SMTP seguro
+        email_service.send_email_with_attachment(email, subject, temp_pdf, filename_override=id_archivo_sanitized)
+        
+        with lock:
+            success_count[0] += 1
+            if on_stats_update:
+                on_stats_update(success=success_count[0])
+            if on_log:
+                on_log(f"✓ ENVIADO: {mask_email(email)} - PDF Cifrado")
+            
+            self._register_envio(
+                batch_record, email, record.get("cedula", ""), id_archivo_sanitized, id_servicio,
+                hmac_key, "exito", None
+            )
 
     def _find_similar_pdf(self, pdf_dir: str, target_filename: str) -> str:
         """Busca en el directorio de PDFs si existe algún archivo similar al buscado.

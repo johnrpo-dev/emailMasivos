@@ -18,7 +18,6 @@ class EmailService:
         self.host = config.get("smtp_host", "smtp.gmail.com")
         self.port = int(config.get("smtp_port", 587))
         self.user = config.get("smtp_user", "")
-        self.password = config.get("smtp_password", "")
         self.sender_name = config.get("sender_name", "SEMS Pro")
         self.logo_path = config.get("logo_path", "")
         self.email_body = config.get("email_body", "")
@@ -30,7 +29,10 @@ class EmailService:
         Soporta SMTPS (implícito en puerto 465) y STARTTLS (explícito en puerto 587/otros),
         con validación estricta de certificados SSL/TLS para prevenir ataques MITM y stripping.
         """
-        if not self.user or not self.password:
+        config = ConfigManager.get_config()
+        password = config.get("smtp_password", "")
+        
+        if not self.user or not password:
             raise ValueError("Las credenciales SMTP no están configuradas correctamente en el archivo de configuración.")
         
         # Crear contexto SSL seguro por defecto (valida certificados de CA y hostname)
@@ -56,17 +58,20 @@ class EmailService:
                 self.server.starttls(context=context)
                 self.server.ehlo()  # Re-identificar sobre el canal seguro
                 
-            self.server.login(self.user, self.password)
+            self.server.login(self.user, password)
             logger.info("Conexión SMTP autenticada de forma segura.")
-        except Exception as e:
-            logger.error(f"Fallo al conectar al servidor SMTP seguro ({self.host}:{self.port}): {str(e)}")
+        except Exception:
+            logger.error(f"Fallo al conectar al servidor SMTP seguro ({self.host}:{self.port})")
             if self.server:
                 try:
                     self.server.quit()
                 except Exception:
                     pass
                 self.server = None
-            raise e
+            raise
+        finally:
+            if 'password' in locals():
+                del password
         
     def disconnect(self):
         """Cierra la conexión SMTP."""
@@ -130,15 +135,16 @@ class EmailService:
             logger.info(f"Correo enviado exitosamente a {mask_email(to_email)}")
             return True
             
-        except Exception as e:
-            logger.error(f"Error al enviar correo a {mask_email(to_email)}: {str(e)}")
-            raise e
+        except Exception:
+            logger.error(f"Error al enviar correo a {mask_email(to_email)}")
+            raise
 
     def _build_html_body(self, plain_text: str, has_logo: bool) -> str:
         """Convierte el texto plano del cuerpo en una plantilla HTML profesional."""
         # Escapar caracteres HTML y convertir saltos de línea
         import html
         escaped = html.escape(plain_text)
+        escaped_sender = html.escape(self.sender_name)
         paragraphs = escaped.split('\n\n')
         html_paragraphs = ''.join(
             f'<p style="margin:0 0 12px 0;line-height:1.6;color:#334155;">{p.replace(chr(10), "<br>")}</p>'
@@ -146,7 +152,7 @@ class EmailService:
         )
         
         # Cabecera dinámica (Logo de empresa inline o en su defecto texto con nombre)
-        header_content = f'<img src="cid:logo_image" alt="{self.sender_name}" style="max-height: 50px; max-width: 240px; display: block; border:0;" />' if has_logo else f'<h1 style="margin:0;font-size:20px;color:#ffffff;font-weight:600;">{self.sender_name}</h1>'
+        header_content = f'<img src="cid:logo_image" alt="{escaped_sender}" style="max-height: 50px; max-width: 240px; display: block; border:0;" />' if has_logo else f'<h1 style="margin:0;font-size:20px;color:#ffffff;font-weight:600;">{escaped_sender}</h1>'
         
         return f"""<!DOCTYPE html>
 <html lang="es">
@@ -162,7 +168,7 @@ class EmailService:
     {html_paragraphs}
   </td></tr>
   <tr><td style="padding:16px 32px;background-color:#f8fafc;border-top:1px solid #e2e8f0;">
-    <p style="margin:0;font-size:12px;color:#94a3b8;text-align:center;">Este correo fue generado automáticamente por {self.sender_name}.</p>
+    <p style="margin:0;font-size:12px;color:#94a3b8;text-align:center;">Este correo fue generado automáticamente por {escaped_sender}.</p>
   </td></tr>
 </table>
 </td></tr>

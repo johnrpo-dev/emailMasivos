@@ -1,7 +1,7 @@
 import customtkinter as ctk
 from tkinter import messagebox
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from src.core.license_manager import LicenseManager
 
 class ActivationModal(ctk.CTk):
@@ -10,6 +10,9 @@ class ActivationModal(ctk.CTk):
         super().__init__()
         
         self.activated = False
+        self._attempt_count = 0
+        self._max_attempts = 5
+        self._lockout_until = None
         
         self.title("Activación de Licencia — SEMS Pro")
         self.geometry("560x320")
@@ -76,6 +79,15 @@ class ActivationModal(ctk.CTk):
         self.btn_activate.pack(side="right", padx=5, fill="x", expand=True)
         
     def activate_license(self):
+        import time
+        now = datetime.now()
+        
+        # Verificar si hay un bloqueo activo
+        if self._lockout_until and now < self._lockout_until:
+            remaining = int((self._lockout_until - now).total_seconds())
+            messagebox.showerror("Bloqueado", f"Demasiados intentos. Espere {remaining} segundos.", parent=self)
+            return
+            
         license_key = self.txt_license.get("0.0", "end").strip()
         if not license_key:
             messagebox.showwarning("Atención", "Por favor, ingrese o pegue la clave de licencia.", parent=self)
@@ -84,6 +96,9 @@ class ActivationModal(ctk.CTk):
         self.btn_activate.configure(state="disabled", text="Validando...")
         self.update()
         
+        # Retardo artificial (1 segundo) para ralentizar bruteforce
+        time.sleep(1.0)
+        
         # Verificar firma
         payload = LicenseManager.verify_signature(license_key)
         
@@ -91,8 +106,16 @@ class ActivationModal(ctk.CTk):
             # Validar que no esté expirada
             expires = payload.get("expires", "")
             if expires:
-                exp_date = datetime.fromisoformat(expires)
-                if datetime.now() > exp_date:
+                try:
+                    exp_date = LicenseManager._parse_iso_datetime(expires)
+                    from datetime import timezone
+                    now_utc = datetime.now(timezone.utc)
+                except Exception:
+                    # Fallback si falla timezone
+                    exp_date = datetime.fromisoformat(expires)
+                    now_utc = datetime.now()
+                    
+                if now_utc > exp_date:
                     messagebox.showerror("Error de Activación", "Esta clave de licencia ya ha expirado.", parent=self)
                     self.btn_activate.configure(state="normal", text="✓ Activar Sistema")
                     return
@@ -107,7 +130,16 @@ class ActivationModal(ctk.CTk):
                 messagebox.showerror("Error", "No se pudo escribir en el almacén de credenciales del sistema.", parent=self)
                 self.btn_activate.configure(state="normal", text="✓ Activar Sistema")
         else:
-            messagebox.showerror("Licencia Inválida", "La clave de licencia proporcionada es incorrecta o está alterada.", parent=self)
+            # Incrementar contador de intentos fallidos
+            self._attempt_count += 1
+            if self._attempt_count >= self._max_attempts:
+                self._lockout_until = datetime.now() + timedelta(minutes=5)
+                self._attempt_count = 0
+                messagebox.showerror("Bloqueado", "Límite de intentos alcanzado. Espere 5 minutos.", parent=self)
+            else:
+                remaining_attempts = self._max_attempts - self._attempt_count
+                messagebox.showerror("Licencia Inválida", f"La clave de licencia proporcionada es incorrecta o está alterada.\nIntentos restantes: {remaining_attempts}", parent=self)
+                
             self.btn_activate.configure(state="normal", text="✓ Activar Sistema")
             
     def on_closing(self):
