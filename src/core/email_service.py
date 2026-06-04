@@ -82,9 +82,6 @@ class EmailService:
     def send_email_with_attachment(self, to_email: str, subject: str, attachment_path: str, filename_override: str = None):
         """Envía un correo con el archivo PDF adjunto."""
         try:
-            if not self.user or not self.password:
-                raise ValueError("Las credenciales SMTP no están configuradas correctamente en el archivo de configuración.")
-
             # Crear mensaje
             msg = MIMEMultipart('mixed')
             msg['From'] = formataddr((self.sender_name, self.user))

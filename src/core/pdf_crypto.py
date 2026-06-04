@@ -39,7 +39,7 @@ class PDFCrypto:
             
         except Exception as e:
             logger.error(f"Error al cifrar PDF {os.path.basename(input_path)}: {str(e)}")
-            raise e
+            raise
             
     @staticmethod
     def secure_cleanup(file_path: str):

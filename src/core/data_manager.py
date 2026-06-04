@@ -46,4 +46,4 @@ class DataManager:
             
         except Exception as e:
             logger.error(f"Error al cargar el CSV: {str(e)}")
-            raise e
+            raise
