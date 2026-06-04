@@ -4,6 +4,7 @@ class LoteModal(ctk.CTkToplevel):
     """Modal premium con la lista detallada de envíos en un lote anterior."""
     def __init__(self, parent, lote_id, lote_data):
         super().__init__(parent)
+        self.lote_data = lote_data
         
         self.title(f"Detalle de Envío - Lote #{lote_id}")
         self.geometry("750x580")
@@ -89,10 +90,55 @@ class LoteModal(ctk.CTkToplevel):
                     lbl_det = ctk.CTkLabel(row_frame, text=f"Detalle: {detalles}", font=ctk.CTkFont(family="Segoe UI", size=11, slant="italic"), text_color=("#ef4444", "#f87171"), justify="left", anchor="w")
                     lbl_det.grid(row=1, column=0, columnspan=2, padx=15, pady=(0, 8), sticky="w")
                     
-        # Botón para cerrar modal
+        # Botón para cerrar modal y reintentar si existen registros fallidos en RAM
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(pady=15, fill="x", padx=30)
+        
         btn_close = ctk.CTkButton(
-            self, text="Cerrar", font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"), 
-            width=140, height=42, fg_color=("#4b5563", "#374151"), hover_color=("#374151", "#1f2937"), 
+            btn_frame, text="Cerrar", font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"), 
+            width=120, height=42, fg_color=("#4b5563", "#374151"), hover_color=("#374151", "#1f2937"), 
             command=self.destroy
         )
-        btn_close.pack(pady=15)
+        btn_close.pack(side="left", padx=5, expand=True)
+        
+        raw_records = lote_data.get("raw_records_fallidos")
+        raw_email_corrections = lote_data.get("raw_email_corrections", {})
+        raw_pdf_corrections = lote_data.get("raw_pdf_corrections", {})
+        
+        if raw_records:
+            if raw_email_corrections or raw_pdf_corrections:
+                btn_correct = ctk.CTkButton(
+                    btn_frame, text="✨ Corregir y Reintentar", font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
+                    width=180, height=42, fg_color=("#10b981", "#059669"), hover_color=("#059669", "#047857"),
+                    text_color="white", command=self.handle_correct_and_retry
+                )
+                btn_correct.pack(side="left", padx=5, expand=True)
+                
+            btn_retry = ctk.CTkButton(
+                btn_frame, text="🔄 Reintentar Fallidos", font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
+                width=160, height=42, fg_color=("#f59e0b", "#d97706"), hover_color=("#d97706", "#b45309"),
+                text_color="white", command=self.handle_retry
+            )
+            btn_retry.pack(side="right", padx=5, expand=True)
+
+    def handle_retry(self):
+        raw_records = self.lote_data.get("raw_records_fallidos")
+        if raw_records:
+            self.master.workflow_controller.retry_batch(
+                raw_records,
+                self.lote_data.get("raw_email_corrections"),
+                self.lote_data.get("raw_pdf_corrections"),
+                apply_corrections=False
+            )
+            self.destroy()
+
+    def handle_correct_and_retry(self):
+        raw_records = self.lote_data.get("raw_records_fallidos")
+        if raw_records:
+            self.master.workflow_controller.retry_batch(
+                raw_records,
+                self.lote_data.get("raw_email_corrections"),
+                self.lote_data.get("raw_pdf_corrections"),
+                apply_corrections=True
+            )
+            self.destroy()

@@ -111,6 +111,9 @@ class WorkflowOrchestrator:
                     on_log("✗ PROCESO COMPLETADO: 0 correos válidos procesados.")
                 batch_record["exitosos"] = 0
                 batch_record["fallidos"] = len(errores)
+                batch_record["raw_records_fallidos"] = records_fallidos
+                batch_record["raw_email_corrections"] = email_corrections
+                batch_record["raw_pdf_corrections"] = pdf_corrections
                 if on_complete:
                     on_complete(errores, total, records_fallidos, email_corrections, pdf_corrections)
                 return
@@ -128,6 +131,9 @@ class WorkflowOrchestrator:
             exitosos_total = total - len(errores)
             batch_record["exitosos"] = exitosos_total
             batch_record["fallidos"] = len(errores)
+            batch_record["raw_records_fallidos"] = records_fallidos
+            batch_record["raw_email_corrections"] = email_corrections
+            batch_record["raw_pdf_corrections"] = pdf_corrections
             
             if on_progress:
                 on_progress("¡Proceso masivo completado!", 1.0)

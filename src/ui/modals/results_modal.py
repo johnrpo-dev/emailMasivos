@@ -19,6 +19,7 @@ class ResultsModal(ctk.CTkToplevel):
         self.pdf_corrections = pdf_corrections
         self.on_retry = on_retry
         self.on_correct_and_retry = on_correct_and_retry
+        self._is_retrying = False
         
         self.title("Reporte de Envíos — SEMS Pro")
         self.geometry("650x680")
@@ -38,6 +39,15 @@ class ResultsModal(ctk.CTkToplevel):
         self.setup_ui()
         
     def safe_close_modal(self):
+        if self.records_fallidos and not self._is_retrying:
+            confirm = messagebox.askyesno(
+                "Confirmar Cierre",
+                "¿Estás seguro de que deseas cerrar el reporte?\n\n"
+                "Los envíos fallidos de este lote solo podrán ser reintentados desde la pestaña 'Historial de Auditoría' mientras la aplicación siga abierta.",
+                parent=self
+            )
+            if not confirm:
+                return
         try:
             self.master.focus_set()
             self.destroy()
@@ -300,6 +310,7 @@ class ResultsModal(ctk.CTkToplevel):
         
     def handle_correct_and_retry(self):
         if self.on_correct_and_retry:
+            self._is_retrying = True
             self.btn_correct.configure(state="disabled", text="Corrigiendo...", fg_color="#4b5563")
             self.btn_copy.configure(state="disabled")
             if hasattr(self, 'btn_retry'):
@@ -310,6 +321,7 @@ class ResultsModal(ctk.CTkToplevel):
             
     def handle_retry(self):
         if self.on_retry:
+            self._is_retrying = True
             self.btn_retry.configure(state="disabled", text="Reintentando...", fg_color="#4b5563")
             self.btn_copy.configure(state="disabled")
             if hasattr(self, 'btn_correct'):

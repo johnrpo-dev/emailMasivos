@@ -131,35 +131,26 @@ class WorkflowController:
         except Exception as e:
             logger.error(f"No se pudo sincronizar los registros con el CSV: {str(e)}")
 
-    def show_results_modal(self, errores, total, records_fallidos, email_corrections=None, pdf_corrections=None):
-        if email_corrections is None:
-            email_corrections = {}
-        if pdf_corrections is None:
-            pdf_corrections = {}
+    def retry_batch(self, records_fallidos, email_corrections=None, pdf_corrections=None, apply_corrections=False):
+        """Reintenta el envío de un lote de registros fallidos (con opción de aplicar correcciones automáticas)."""
+        if not records_fallidos:
+            return
             
-        def on_retry():
-            self._retry_count += 1
-            if self._retry_count > self.MAX_RETRIES:
-                messagebox.showwarning(
-                    "Límite Alcanzado",
-                    f"Se han alcanzado {self.MAX_RETRIES} reintentos máximos por seguridad.\n"
-                    f"Verifique manualmente los correos restantes antes de reiniciar."
-                )
-                return
-                
-            # Sincronizar registros fallidos con posibles correcciones en el CSV antes de reintentar
-            self._sync_records_with_current_csv(records_fallidos)
-            
-            self.app.home_panel.btn_start.configure(state="disabled", fg_color="#4b5563")
-            self.app.home_panel.progress_bar.set(0)
-            self.app.home_panel.lbl_status.configure(
-                text=f"Reintentando {len(records_fallidos)} envios fallidos... (Intento {self._retry_count}/{self.MAX_RETRIES})"
+        self._retry_count += 1
+        if self._retry_count > self.MAX_RETRIES:
+            messagebox.showwarning(
+                "Límite Alcanzado",
+                f"Se han alcanzado {self.MAX_RETRIES} reintentos máximos por seguridad.\n"
+                f"Verifique manualmente los correos restantes antes de reiniciar."
             )
-            self.execute_workflow(records_fallidos)
+            return
 
-        def on_correct_and_retry():
-            # Sincronizar registros fallidos con posibles correcciones en el CSV antes de aplicar correcciones automáticas
-            self._sync_records_with_current_csv(records_fallidos)
+        # Sincronizar registros fallidos con posibles correcciones en el CSV antes de reintentar
+        self._sync_records_with_current_csv(records_fallidos)
+        
+        if apply_corrections:
+            if email_corrections is None: email_corrections = {}
+            if pdf_corrections is None: pdf_corrections = {}
             
             corrected_records = []
             remaining_records = []
@@ -191,13 +182,30 @@ class WorkflowController:
                 messagebox.showinfo("Info", "No hay correcciones para aplicar.")
                 return
                 
-            all_records_to_retry = corrected_records + remaining_records
+            records_to_run = corrected_records + remaining_records
+        else:
+            records_to_run = records_fallidos
             
-            self.app.home_panel.btn_start.configure(state="disabled", fg_color="#4b5563")
-            self.app.home_panel.progress_bar.set(0)
-            self.app.home_panel.lbl_status.configure(text=f"Reenviando {len(all_records_to_retry)} registro(s)...")
+        self.app.home_panel.btn_start.configure(state="disabled", fg_color="#4b5563")
+        self.app.home_panel.progress_bar.set(0)
+        self.app.home_panel.lbl_status.configure(
+            text=f"Reintentando {len(records_to_run)} envios fallidos... (Intento {self._retry_count}/{self.MAX_RETRIES})"
+        )
+        
+        self.app.show_home()
+        self.execute_workflow(records_to_run)
+
+    def show_results_modal(self, errores, total, records_fallidos, email_corrections=None, pdf_corrections=None):
+        if email_corrections is None:
+            email_corrections = {}
+        if pdf_corrections is None:
+            pdf_corrections = {}
             
-            self.execute_workflow(all_records_to_retry)
+        def on_retry():
+            self.retry_batch(records_fallidos, email_corrections, pdf_corrections, apply_corrections=False)
+
+        def on_correct_and_retry():
+            self.retry_batch(records_fallidos, email_corrections, pdf_corrections, apply_corrections=True)
 
         ResultsModal(
             self.app, errores, total, records_fallidos, email_corrections,
