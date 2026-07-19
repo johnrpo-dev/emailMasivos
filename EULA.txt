@@ -1,0 +1,75 @@
+ACUERDO DE LICENCIA DE USUARIO FINAL (EULA)
+SEMS Pro — Sistema de Envíos Masivos Seguros
+Versión 1.0.1
+
+IMPORTANTE: LEA ESTE ACUERDO CUIDADOSAMENTE ANTES DE INSTALAR O UTILIZAR ESTE SOFTWARE.
+
+Al instalar, copiar o utilizar de cualquier forma el software SEMS Pro ("el Software"), usted ("el Usuario" o "el Licenciatario") acepta quedar vinculado por los términos y condiciones de este Acuerdo de Licencia de Usuario Final ("EULA"). Si no está de acuerdo con estos términos, no instale ni utilice el Software.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. CONCESIÓN DE LICENCIA
+
+Se otorga una licencia limitada, no exclusiva, intransferible y revocable para usar el Software. Cada clave de activación autoriza una única instalación en un solo equipo, aplicándose el mismo principio por volumen para licencias corporativas. El uso simultáneo en múltiples equipos requiere la adquisición de licencias adicionales.
+
+2. RESTRICCIONES DE USO
+
+El Usuario NO podrá:
+
+2.1. Copiar, reproducir, distribuir, sublicenciar, alquilar, prestar o transferir el Software o cualquier parte del mismo a terceros sin autorización expresa por escrito del titular de los derechos.
+
+2.2. Realizar ingeniería inversa, descompilar, desensamblar o intentar derivar el código fuente del Software, excepto en la medida en que dicha restricción esté expresamente prohibida por la legislación aplicable.
+
+2.3. Modificar, adaptar, traducir o crear obras derivadas basadas en el Software.
+
+2.4. Utilizar el Software para actividades ilegales, incluyendo pero no limitado a: envío de correo no solicitado (spam), suplantación de identidad (phishing), o distribución de contenido malicioso.
+
+3. PROPIEDAD INTELECTUAL
+
+3.1. El Software, incluyendo su código fuente, código objeto, documentación, diseño gráfico, estructura y organización, está protegido por las leyes de derechos de autor y tratados internacionales de propiedad intelectual. Queda prohibido eliminar, alterar u ocultar avisos de propiedad intelectual, marcas comerciales o identificadores contenidos en el Software.
+
+3.2. Este EULA no transfiere ningún derecho de propiedad sobre el Software. Todos los derechos no concedidos expresamente quedan reservados al titular.
+
+4. PROTECCIÓN DE DATOS Y PRIVACIDAD
+
+4.1. El Software procesa datos personales (direcciones de correo electrónico, números de identificación) exclusivamente de forma local en el equipo del Usuario. No se transmite información personal a servidores del proveedor del Software.
+
+4.2. Los archivos PDF son cifrados localmente mediante estándar AES-256 antes de su envío. El Software emplea mecanismos de mejor esfuerzo (sobreescritura con datos aleatorios y posterior eliminación física) para la eliminación segura de archivos temporales generados durante el proceso. No obstante, el proveedor no garantiza la irrecuperabilidad absoluta de los datos en todos los escenarios de hardware o sistema operativo.
+
+4.3. Las credenciales SMTP se almacenan en el Administrador de Credenciales de Windows (Windows Credential Manager) y nunca se persisten en texto plano en disco.
+
+4.4. El Usuario es el único responsable de garantizar que el tratamiento de datos personales realizado a través del Software cumple con la legislación de protección de datos aplicable en su jurisdicción.
+
+5. SISTEMA DE LICENCIAMIENTO
+
+5.1. El Software incorpora un sistema de verificación de licencias basado en firma criptográfica. La manipulación, elusión o alteración de este mecanismo constituye una violación de este EULA y puede dar lugar a acciones legales.
+
+5.2. La licencia puede ser verificada periódicamente para confirmar su validez. La desactivación de una licencia por incumplimiento de estos términos no da derecho a reembolso.
+
+6. ACTUALIZACIONES Y SOPORTE
+
+6.1. El proveedor podrá publicar actualizaciones, parches o nuevas versiones del Software a su exclusiva discreción.
+
+6.2. El acceso a actualizaciones y soporte técnico estará sujeto a los términos del plan de licencia adquirido.
+
+7. LIMITACIÓN DE RESPONSABILIDAD
+
+7.1. EL SOFTWARE SE PROPORCIONA "TAL CUAL" (AS IS) SIN GARANTÍAS DE NINGÚN TIPO, EXPRESAS O IMPLÍCITAS, INCLUYENDO PERO NO LIMITADO A LAS GARANTÍAS DE COMERCIABILIDAD, IDONEIDAD PARA UN PROPÓSITO PARTICULAR Y NO INFRACCIÓN.
+
+7.2. EN NINGÚN CASO EL PROVEEDOR SERÁ RESPONSABLE POR DAÑOS DIRECTOS, INDIRECTOS, INCIDENTALES, ESPECIALES, CONSECUENTES O EJEMPLARES, INCLUYENDO PÉRDIDA DE DATOS, PÉRDIDA DE BENEFICIOS O INTERRUPCIÓN DEL NEGOCIO.
+
+7.3. El proveedor no garantiza la entrega exitosa de correos electrónicos, la cual depende de factores externos como la configuración del servidor SMTP, las políticas del proveedor de correo y la validez de las direcciones de destino. El Usuario es el único responsable del contenido enviado y de verificar la exactitud de los datos del archivo CSV de entrada.
+
+8. TERMINACIÓN Y DISPOSICIONES GENERALES
+
+8.1. El proveedor puede revocar esta licencia de forma inmediata si el Usuario incumple cualquiera de los términos de este EULA. Tras la terminación, el Usuario deberá desinstalar y destruir todas las copias del Software en su posesión. Las cláusulas relativas a Propiedad Intelectual, Limitación de Responsabilidad y Restricciones de Uso sobreviven a la terminación.
+
+8.2. Si alguna disposición de este EULA fuera declarada inválida por un tribunal competente, las disposiciones restantes continuarán en pleno vigor y efecto.
+
+8.3. El proveedor se reserva el derecho de modificar los términos de este EULA en futuras versiones del Software. En caso de cambios sustanciales, el proveedor realizará esfuerzos razonables para notificar al Usuario antes de que dichos cambios entren en vigencia. El uso continuado del Software tras la notificación constituirá la aceptación de los nuevos términos.
+
+8.4. Este EULA se rige por las leyes de la República de Colombia. Para la resolución de cualquier controversia, las partes se someten a la jurisdicción de los tribunales competentes de la ciudad de Medellín, Colombia, renunciando expresamente a cualquier otro fuero que pudiera corresponderles.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Al hacer clic en "Acepto" o al instalar el Software, usted reconoce haber leído, comprendido y aceptado los términos de este Acuerdo de Licencia de Usuario Final.

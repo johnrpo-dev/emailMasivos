@@ -6,9 +6,23 @@ from src.utils.logger import logger
 
 class ConfigManager:
     """Gestiona la lectura y escritura de la configuración dinámica del sistema."""
-    
-    CONFIG_FILE = "config.json"
+
+    # La configuración vive en %APPDATA%/SEMS_Pro: cuando la app está instalada en
+    # Program Files, el directorio de trabajo es de solo lectura para usuarios sin
+    # privilegios y escribir config.json ahí falla con PermissionError.
+    CONFIG_DIR = os.path.join(os.environ.get("APPDATA", os.getcwd()), "SEMS_Pro")
+    CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
+    LEGACY_CONFIG_FILE = "config.json"
     SERVICE_NAME = "SEMS_App"
+
+    @staticmethod
+    def _resolve_config_file() -> str:
+        """Retorna la ruta del config.json a leer, contemplando el archivo legado en CWD."""
+        if os.path.exists(ConfigManager.CONFIG_FILE):
+            return ConfigManager.CONFIG_FILE
+        if os.path.exists(ConfigManager.LEGACY_CONFIG_FILE):
+            return ConfigManager.LEGACY_CONFIG_FILE
+        return ConfigManager.CONFIG_FILE
     
     @staticmethod
     def get_config() -> dict:
@@ -27,11 +41,12 @@ class ConfigManager:
             "pdf_password_suffix": ""
         }
         
-        if not os.path.exists(ConfigManager.CONFIG_FILE):
+        config_file = ConfigManager._resolve_config_file()
+        if not os.path.exists(config_file):
             return default_config
-            
+
         try:
-            with open(ConfigManager.CONFIG_FILE, 'r', encoding='utf-8') as f:
+            with open(config_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 
             # Combinar datos cargados con defaults por si faltan claves
@@ -58,11 +73,11 @@ class ConfigManager:
                             keyring.set_password(ConfigManager.SERVICE_NAME, "smtp_credentials", creds)
                             logger.info("Credenciales migradas automáticamente al nuevo formato de Keyring.")
                         
-                        # Limpiar smtp_user del archivo JSON en disco
+                        # Limpiar smtp_user del archivo JSON en disco (en la misma ruta leída)
                         if "smtp_user" in data:
                             del data["smtp_user"]
                             try:
-                                with open(ConfigManager.CONFIG_FILE, 'w', encoding='utf-8') as fw:
+                                with open(config_file, 'w', encoding='utf-8') as fw:
                                     json.dump(data, fw, indent=4, ensure_ascii=False)
                                 logger.info("Campo 'smtp_user' eliminado de config.json tras migración.")
                             except Exception as ew:
@@ -96,9 +111,20 @@ class ConfigManager:
         }
         
         try:
-            # Guardar datos públicos en JSON
+            # Guardar datos públicos en JSON (siempre en %APPDATA%/SEMS_Pro)
+            os.makedirs(ConfigManager.CONFIG_DIR, exist_ok=True)
             with open(ConfigManager.CONFIG_FILE, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=4, ensure_ascii=False)
+
+            # Migración: retirar el config.json legado del directorio de trabajo
+            # para que futuras lecturas no encuentren datos desactualizados.
+            try:
+                if os.path.exists(ConfigManager.LEGACY_CONFIG_FILE) and \
+                   os.path.abspath(ConfigManager.LEGACY_CONFIG_FILE) != os.path.abspath(ConfigManager.CONFIG_FILE):
+                    os.remove(ConfigManager.LEGACY_CONFIG_FILE)
+                    logger.info("config.json legado del directorio de trabajo migrado a APPDATA.")
+            except Exception as em:
+                logger.warning(f"No se pudo retirar el config.json legado: {em}")
             
             # Restringir permisos del archivo: solo lectura/escritura para el propietario
             try:
@@ -107,9 +133,12 @@ class ConfigManager:
                     creationflags = 0
                     if hasattr(subprocess, 'CREATE_NO_WINDOW'):
                         creationflags = subprocess.CREATE_NO_WINDOW
+                    # *S-1-3-4 = OWNER RIGHTS: concede al propietario actual del archivo,
+                    # sin depender del nombre de usuario del entorno (que falla con cuentas
+                    # Microsoft o nombres localizados).
                     subprocess.run(
-                        ["icacls", ConfigManager.CONFIG_FILE, "/inheritance:r", 
-                         "/grant:r", f"{os.environ.get('USERNAME', 'SYSTEM')}:(R,W)"],
+                        ["icacls", ConfigManager.CONFIG_FILE, "/inheritance:r",
+                         "/grant:r", "*S-1-3-4:(R,W)"],
                         capture_output=True, check=True, creationflags=creationflags
                     )
                 else:

@@ -1,5 +1,6 @@
 import os
 import re
+import smtplib
 import tempfile
 import time
 import threading
@@ -188,10 +189,19 @@ class WorkflowOrchestrator:
             
             if not email:
                 valid_failed_count += 1
+                # INTEGRIDAD (A-04): registrar la omisión en errores y records_fallidos;
+                # de lo contrario "exitosos = total - len(errores)" la cuenta como éxito
+                # y la fila queda irrecuperable para el reintento.
+                errores.append("Fila sin correo electrónico: registro omitido")
+                records_fallidos.append(record)
                 if on_stats_update:
                     on_stats_update(failed=valid_failed_count)
                 if on_log:
                     on_log("⚠ OMITIDO: Fila sin correo electrónico.")
+                self._register_envio(
+                    batch_record, email, cedula, id_archivo, id_servicio, hmac_key,
+                    "error", "Fila sin correo electrónico"
+                )
                 continue
             
             validation = validate_email(email)
@@ -200,11 +210,14 @@ class WorkflowOrchestrator:
                 if on_stats_update:
                     on_stats_update(failed=valid_failed_count)
                 
-                # Saneamiento PII: Enmascarar sugerencia en errores públicos
+                # Saneamiento PII: Enmascarar sugerencia en errores públicos.
+                # SEGURIDAD (C-01): la clave del dict es el email REAL normalizado, nunca la
+                # máscara: mask_email no es inyectiva y una colisión aplicaría la corrección
+                # de una persona al registro de otra (envío cruzado de documentos).
                 msg = f"{mask_email(email)}: {validation.message}"
                 if validation.suggestion:
                     msg += f" (Sugerencia: {mask_email(validation.suggestion)})"
-                    email_corrections[mask_email(email)] = validation.suggestion
+                    email_corrections[email.strip().lower()] = validation.suggestion
                 errores.append(msg)
                 records_fallidos.append(record)
                 logger.warning(f"Email rechazado pre-envío: {validation.message}")
@@ -245,16 +258,33 @@ class WorkflowOrchestrator:
         # Dividir los registros en trozos balanceados
         chunks = [records_validos[i::num_workers] for i in range(num_workers)]
         
+        # Throttling global compartido (M-01): un solo marcapasos para todos los hilos,
+        # de lo contrario el retardo configurado se multiplica por el número de workers.
+        throttle = {"lock": threading.Lock(), "next_slot": [0.0]}
+
         # Lanzamiento de tareas concurrentes
         with ThreadPoolExecutor(max_workers=num_workers) as executor:
-            for w_id, chunk in enumerate(chunks):
+            futures = [
                 executor.submit(
-                    self._process_chunk_worker, chunk, w_id, pdf_dir, hmac_key, 
+                    self._process_chunk_worker, chunk, w_id, pdf_dir, hmac_key,
                     subject_template, batch_record, errores, records_fallidos,
                     on_progress, on_stats_update, on_log, lock,
                     completed_count, success_count, failed_count, total_validos, send_delay,
-                    pdf_corrections
+                    pdf_corrections, throttle
                 )
+                for w_id, chunk in enumerate(chunks)
+            ]
+
+        # RESILIENCIA (A-03): consultar los futures. Sin esto, una excepción no controlada
+        # en un hilo descarta su chunk completo en silencio y el lote reporta éxito falso.
+        for w_id, future in enumerate(futures):
+            exc = future.exception()
+            if exc:
+                logger.critical(f"El hilo de envío {w_id} terminó con excepción no controlada: {exc}")
+                with lock:
+                    errores.append(f"Hilo de envío {w_id}: fallo interno no controlado ({self._sanitize_error(exc)})")
+                if on_log:
+                    on_log(f"✗ FALLO INTERNO: El hilo {w_id} se detuvo inesperadamente. Revise el reporte.")
 
     def _sanitize_error(self, exception: Exception) -> str:
         """Sanitiza mensajes de error de SMTP/Red para evitar fugas de información interna (como IPs o hosts)."""
@@ -274,11 +304,11 @@ class WorkflowOrchestrator:
         # Si es un error general, omitimos detalles de red/servidor del string
         return "Error inesperado al procesar o enviar el correo."
 
-    def _process_chunk_worker(self, chunk_records, worker_id, pdf_dir, hmac_key, 
+    def _process_chunk_worker(self, chunk_records, worker_id, pdf_dir, hmac_key,
                               subject_template, batch_record, errores, records_fallidos,
                               on_progress, on_stats_update, on_log, lock,
                               completed_count, success_count, failed_count, total_validos, send_delay=2,
-                              pdf_corrections=None):
+                              pdf_corrections=None, throttle=None):
         """Tarea concurrente individual de cada hilo para procesar su respectivo chunk."""
         email_service = EmailService()
         try:
@@ -323,16 +353,33 @@ class WorkflowOrchestrator:
                     subject_template, batch_record, errores, records_fallidos,
                     on_progress, on_stats_update, on_log, lock,
                     completed_count, success_count, failed_count, total_validos, send_delay,
-                    pdf_corrections, pwd_prefix, pwd_suffix
+                    pdf_corrections, pwd_prefix, pwd_suffix, throttle
                 )
         finally:
-            email_service.disconnect()
+            # RESILIENCIA (A-03): quit() puede lanzar SMTPServerDisconnected si el servidor
+            # ya cerró; no debe matar el hilo ni ocultar el resultado del chunk.
+            try:
+                email_service.disconnect()
+            except Exception as e:
+                logger.warning(f"Cierre de conexión SMTP del hilo {worker_id} falló (ignorado): {e}")
+
+    def _global_throttle_wait(self, throttle, send_delay):
+        """Marcapasos global (M-01): reserva un turno de envío espaciado send_delay segundos
+        entre TODOS los hilos, para que el retardo configurado sea la tasa real del lote."""
+        if not throttle or send_delay <= 0:
+            return
+        with throttle["lock"]:
+            now = time.monotonic()
+            wait = max(0.0, throttle["next_slot"][0] - now)
+            throttle["next_slot"][0] = max(throttle["next_slot"][0], now) + send_delay
+        if wait > 0:
+            time.sleep(wait)
 
     def _process_single_record(self, record, worker_id, email_service, pdf_dir, hmac_key,
                                subject_template, batch_record, errores, records_fallidos,
                                on_progress, on_stats_update, on_log, lock,
                                completed_count, success_count, failed_count, total_validos, send_delay,
-                               pdf_corrections, pwd_prefix, pwd_suffix):
+                               pdf_corrections, pwd_prefix, pwd_suffix, throttle=None):
         """Procesa y envía un único registro del lote de envíos."""
         email = str(record.get("email", "")).strip()
         id_archivo = str(record.get("id_archivo", "")).strip()
@@ -341,6 +388,12 @@ class WorkflowOrchestrator:
         
         if not email or not id_archivo or not cedula:
             with lock:
+                # INTEGRIDAD (A-04): la omisión debe reflejarse en errores/records_fallidos
+                errores.append(
+                    f"{mask_email(email) if email else 'Fila sin correo'}: "
+                    f"Datos obligatorios incompletos en fila CSV (email, id_archivo o cedula)"
+                )
+                records_fallidos.append(record)
                 completed_count[0] += 1
                 failed_count[0] += 1
                 if on_stats_update:
@@ -422,13 +475,31 @@ class WorkflowOrchestrator:
         try:
             # Construir la contraseña fortalecida
             pdf_password = f"{pwd_prefix}{cedula}{pwd_suffix}"
-            
+
+            # Throttling global (M-01): reservar turno de envío antes de transmitir
+            self._global_throttle_wait(throttle, send_delay)
+
             # Cifrado y envío
-            self._encrypt_and_send(
-                input_pdf, temp_pdf, pdf_password, email, id_servicio, id_archivo_sanitized,
-                subject_template, email_service, batch_record, hmac_key, record, lock,
-                success_count, failed_count, errores, records_fallidos, on_stats_update, on_log
-            )
+            try:
+                self._encrypt_and_send(
+                    input_pdf, temp_pdf, pdf_password, email, id_servicio, id_archivo_sanitized,
+                    subject_template, email_service, batch_record, hmac_key, record, lock,
+                    success_count, failed_count, errores, records_fallidos, on_stats_update, on_log
+                )
+            except (smtplib.SMTPServerDisconnected, smtplib.SMTPSenderRefused):
+                # RESILIENCIA (A-05): la conexión persistente murió (habitual bajo carga con
+                # Gmail). Reconectar una vez evita que el resto del chunk falle en cascada.
+                logger.warning(f"Hilo {worker_id}: conexión SMTP perdida; reconectando para reintento local...")
+                try:
+                    email_service.disconnect()
+                except Exception:
+                    pass
+                email_service.connect()
+                self._encrypt_and_send(
+                    input_pdf, temp_pdf, pdf_password, email, id_servicio, id_archivo_sanitized,
+                    subject_template, email_service, batch_record, hmac_key, record, lock,
+                    success_count, failed_count, errores, records_fallidos, on_stats_update, on_log
+                )
         except Exception as e:
             logger.error(f"Fallo de procesamiento con {mask_email(email)}: {str(e)}")
             err_msg = self._sanitize_error(e)
@@ -455,10 +526,8 @@ class WorkflowOrchestrator:
                     os.rmdir(temp_dir)
                 except Exception as ex:
                     logger.warning(f"No se pudo eliminar directorio temporal {temp_dir}: {str(ex)}")
-            
-            # Throttling
-            if send_delay > 0:
-                time.sleep(send_delay)
+            # Nota (M-01): el throttling ahora es global y se aplica ANTES del envío
+            # (_global_throttle_wait); el sleep por worker duplicaba la tasa configurada.
         
         with lock:
             completed_count[0] += 1
@@ -509,9 +578,21 @@ class WorkflowOrchestrator:
             subject = subject_template.replace("{id_servicio}", id_servicio)
         else:
             subject = f"{subject_template.strip()} - {id_servicio}"
-            
+
+        # RESILIENCIA (A-05): Message-ID determinista por registro y día. Si un timeout
+        # ambiguo obliga a reintentar un envío que sí llegó, el receptor puede deduplicar
+        # y el historial permite auditar el duplicado.
+        idempotency_key = None
+        if hmac_key:
+            raw = f"{email}|{id_archivo_sanitized}|{record.get('cedula', '')}|{datetime.now().strftime('%Y%m%d')}"
+            idempotency_key = self._hash_pii(raw, hmac_key)[:24]
+
         # Envío SMTP seguro
-        email_service.send_email_with_attachment(email, subject, temp_pdf, filename_override=id_archivo_sanitized)
+        email_service.send_email_with_attachment(
+            email, subject, temp_pdf,
+            filename_override=id_archivo_sanitized,
+            idempotency_key=idempotency_key
+        )
         
         with lock:
             success_count[0] += 1

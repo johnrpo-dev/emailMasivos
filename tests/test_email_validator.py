@@ -76,7 +76,7 @@ class TestEmailValidator(unittest.TestCase):
         result = validate_email("user@dominio-inexistente-fake.com")
         self.assertFalse(result.is_valid)
         self.assertEqual(result.error_type, "dominio_inexistente")
-        self.assertIn("no tiene servidores de correo", result.message)
+        self.assertIn("no existe o no es alcanzable", result.message)
 
     @patch('src.utils.email_validator._resolve_domain_with_timeout')
     def test_dns_validation_timeout_graceful(self, mock_resolve):

@@ -1,8 +1,7 @@
 # pyrefly: ignore [missing-import]
 import customtkinter as ctk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog
 import os
-import re
 import sys
 import subprocess
 import secrets
@@ -11,6 +10,8 @@ import glob
 import atexit
 from src.config.config_manager import ConfigManager
 from src.utils.logger import logger, mask_email
+from src.ui import theme, dialogs
+from src.ui.components import GhostNavButton, apply_window_icon
 from src.ui.views.home_view import HomeView
 from src.ui.views.config_view import ConfigView
 from src.ui.views.history_view import HistoryView
@@ -22,17 +23,23 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
 
+        # Las fuentes cacheadas del root anterior (ActivationModal) quedarían
+        # ligadas a un Tk destruido: limpiar antes de crear cualquier CTkFont.
+        theme.reset_font_cache()
+
         self.title("SEMS Pro - Envíos Masivos")
         # Reducimos la altura por defecto a 690px para pantallas de 15" y permitimos redimensionar libremente
         self.geometry("850x690")
         self.resizable(True, True)
-        
+        self.minsize(820, 620)
+        apply_window_icon(self)
+
         # Inicializar historial efímero en memoria RAM (Zero-Footprint por diseño)
         self.session_batches = []
         self._hmac_key = secrets.token_bytes(32)
-        
-        # Tema Global Premium
-        ctk.set_appearance_mode("dark")
+
+        # Tema clínico global
+        ctk.set_appearance_mode(theme.DEFAULT_APPEARANCE)
         ctk.set_default_color_theme("blue")
         
         # Variables de estado (Envío)
@@ -60,11 +67,11 @@ class App(ctk.CTk):
         }
         self.config_provider = ctk.StringVar(value="Gmail")
         
-        # Tipografías base
-        self.font_title = ctk.CTkFont(family="Segoe UI", size=26, weight="bold")
-        self.font_label = ctk.CTkFont(family="Segoe UI", size=14, weight="bold")
-        self.font_text = ctk.CTkFont(family="Segoe UI", size=13)
-        self.font_status = ctk.CTkFont(family="Segoe UI", size=14, slant="italic")
+        # Tipografías base (alias de compatibilidad hacia el tema central)
+        self.font_title = theme.font("h1")
+        self.font_label = theme.font("body_strong")
+        self.font_text = theme.font("body")
+        self.font_status = theme.font("status")
         
         # Inicializar controladores de UI
         self.workflow_controller = WorkflowController(self)
@@ -110,84 +117,91 @@ class App(ctk.CTk):
         # Configurar grid principal (Sidebar + Content)
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
-        self.configure(fg_color=("#f8fafc", "#080c14"))
-        
+        self.configure(fg_color=theme.APP_BG)
+
         # === SIDEBAR ===
-        self.sidebar_frame = ctk.CTkFrame(self, width=230, corner_radius=0, fg_color=("#f1f5f9", "#0d111c"), border_width=0)
+        self.sidebar_frame = ctk.CTkFrame(self, width=230, corner_radius=0, fg_color=theme.SIDEBAR_BG, border_width=0)
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
         self.sidebar_frame.grid_rowconfigure(5, weight=1) # Empujar hacia arriba
-        
+
         lbl_logo = ctk.CTkLabel(
-            self.sidebar_frame, text="SEMS PRO", 
-            font=ctk.CTkFont(family="Segoe UI", size=24, weight="bold"),
-            text_color=("#4f46e5", "#818cf8")
+            self.sidebar_frame, text="SEMS PRO",
+            font=ctk.CTkFont(family=theme.FONT_FAMILY, size=24, weight="bold"),
+            text_color=theme.PRIMARY
         )
-        lbl_logo.grid(row=0, column=0, padx=20, pady=(30, 5))
-        
+        lbl_logo.grid(row=0, column=0, padx=20, pady=(30, 0))
+
         lbl_logo_sub = ctk.CTkLabel(
-            self.sidebar_frame, text="ENVÍOS INTELIGENTES", 
-            font=ctk.CTkFont(family="Segoe UI", size=9, weight="bold"),
-            text_color=("#94a3b8", "#475569")
+            self.sidebar_frame, text="ENVÍOS INTELIGENTES",
+            font=ctk.CTkFont(family=theme.FONT_FAMILY, size=9, weight="bold"),
+            text_color=theme.TEXT_MUTED
         )
-        lbl_logo_sub.grid(row=0, column=0, padx=20, pady=(0, 30))
-        
-        self.btn_nav_home = ctk.CTkButton(
-            self.sidebar_frame, text="🚀 Envío Masivo", font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
-            fg_color="transparent", text_color=("#475569", "#94a3b8"), hover_color=("#cbd5e1", "#1e293b"),
-            anchor="w", height=42, corner_radius=10, border_spacing=10, command=self.show_home
+        lbl_logo_sub.grid(row=1, column=0, padx=20, pady=(0, 30))
+
+        self.btn_nav_home = GhostNavButton(self.sidebar_frame, text="Envío Masivo", command=self.show_home)
+        self.btn_nav_home.grid(row=2, column=0, padx=15, pady=6, sticky="ew")
+
+        self.btn_nav_config = GhostNavButton(self.sidebar_frame, text="Configuración", command=self.show_config)
+        self.btn_nav_config.grid(row=3, column=0, padx=15, pady=6, sticky="ew")
+
+        self.btn_nav_history = GhostNavButton(self.sidebar_frame, text="Historial", command=self.show_history)
+        self.btn_nav_history.grid(row=4, column=0, padx=15, pady=6, sticky="ew")
+
+        self._nav_buttons = {
+            "home": self.btn_nav_home,
+            "config": self.btn_nav_config,
+            "history": self.btn_nav_history,
+        }
+
+        # Conmutador de apariencia claro/oscuro al pie del sidebar
+        self.appearance_switch = ctk.CTkSwitch(
+            self.sidebar_frame, text="Modo oscuro",
+            font=theme.font("caption"), text_color=theme.TEXT_SECONDARY,
+            progress_color=theme.BTN_PRIMARY_FG,
+            command=self._toggle_appearance
         )
-        self.btn_nav_home.grid(row=1, column=0, padx=15, pady=6, sticky="ew")
-        
-        self.btn_nav_config = ctk.CTkButton(
-            self.sidebar_frame, text="⚙️ Configuración", font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
-            fg_color="transparent", text_color=("#475569", "#94a3b8"), hover_color=("#cbd5e1", "#1e293b"),
-            anchor="w", height=42, corner_radius=10, border_spacing=10, command=self.show_config
-        )
-        self.btn_nav_config.grid(row=2, column=0, padx=15, pady=6, sticky="ew")
-        
-        self.btn_nav_history = ctk.CTkButton(
-            self.sidebar_frame, text="📜 Historial", font=ctk.CTkFont(family="Segoe UI", size=14, weight="bold"),
-            fg_color="transparent", text_color=("#475569", "#94a3b8"), hover_color=("#cbd5e1", "#1e293b"),
-            anchor="w", height=42, corner_radius=10, border_spacing=10, command=self.show_history
-        )
-        self.btn_nav_history.grid(row=3, column=0, padx=15, pady=6, sticky="ew")
-        
+        self.appearance_switch.grid(row=6, column=0, padx=20, pady=(0, 25), sticky="w")
+        if theme.DEFAULT_APPEARANCE == "dark":
+            self.appearance_switch.select()
+
         # === CONTENIDO PRINCIPAL ===
         self.main_container = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
         self.main_container.grid(row=0, column=1, sticky="nsew", padx=25, pady=25)
         self.main_container.grid_rowconfigure(0, weight=1)
         self.main_container.grid_columnconfigure(0, weight=1)
-        
+
         # Instanciar e integrar los paneles modulares
         self.home_panel = HomeView(self.main_container, self)
         self.config_panel = ConfigView(self.main_container, self)
         self.history_panel = HistoryView(self.main_container, self)
-        
+
         self.show_home()
-        
+
+    def _toggle_appearance(self):
+        ctk.set_appearance_mode("dark" if self.appearance_switch.get() else "light")
+
+    def _set_active_nav(self, active_name):
+        """Marca como activo el botón de navegación indicado y desactiva el resto."""
+        for name, btn in self._nav_buttons.items():
+            btn.set_active(name == active_name)
+
     def show_home(self):
         self.config_panel.grid_forget()
         self.history_panel.grid_forget()
         self.home_panel.grid(row=0, column=0, sticky="nsew")
-        self.btn_nav_home.configure(fg_color=("#e2e8f0", "#1e293b"), text_color=("#4f46e5", "#818cf8"))
-        self.btn_nav_config.configure(fg_color="transparent", text_color=("#475569", "#94a3b8"))
-        self.btn_nav_history.configure(fg_color="transparent", text_color=("#475569", "#94a3b8"))
-        
+        self._set_active_nav("home")
+
     def show_config(self):
         self.home_panel.grid_forget()
         self.history_panel.grid_forget()
         self.config_panel.grid(row=0, column=0, sticky="nsew")
-        self.btn_nav_config.configure(fg_color=("#e2e8f0", "#1e293b"), text_color=("#4f46e5", "#818cf8"))
-        self.btn_nav_home.configure(fg_color="transparent", text_color=("#475569", "#94a3b8"))
-        self.btn_nav_history.configure(fg_color="transparent", text_color=("#475569", "#94a3b8"))
-        
+        self._set_active_nav("config")
+
     def show_history(self):
         self.home_panel.grid_forget()
         self.config_panel.grid_forget()
         self.history_panel.grid(row=0, column=0, sticky="nsew")
-        self.btn_nav_history.configure(fg_color=("#e2e8f0", "#1e293b"), text_color=("#4f46e5", "#818cf8"))
-        self.btn_nav_home.configure(fg_color="transparent", text_color=("#475569", "#94a3b8"))
-        self.btn_nav_config.configure(fg_color="transparent", text_color=("#475569", "#94a3b8"))
+        self._set_active_nav("history")
         self.history_panel.load_history_batches()
         
     def browse_csv(self):
@@ -203,7 +217,7 @@ class App(ctk.CTk):
     def show_preview(self):
         """Invoca al modal desacoplado de vista previa de datos."""
         if not self.csv_path.get():
-            messagebox.showwarning("Atención", "Selecciona primero el archivo CSV de datos.")
+            dialogs.show_warning(self, "Atención", "Selecciona primero el archivo CSV de datos.")
             return
         PreviewModal(self, self.csv_path.get())
         
@@ -267,6 +281,11 @@ class App(ctk.CTk):
             system_temp = tempfile.gettempdir()
             # Buscar archivos sems_*.pdf directamente en el temp del sistema
             temp_dirs = [system_temp]
+            # Cobertura de la ubicación legada data/temp del directorio de trabajo (M-02):
+            # versiones anteriores escribían los temporales cifrados allí y dejaban residuos.
+            legacy_temp = os.path.join(os.getcwd(), "data", "temp")
+            if os.path.isdir(legacy_temp):
+                temp_dirs.append(legacy_temp)
             # También buscar en subdirectorios sems_batch_* creados por mkdtemp
             for entry in os.listdir(system_temp):
                 if entry.startswith("sems_batch_"):

@@ -1,5 +1,6 @@
 import smtplib
 import os
+import re
 import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -35,8 +36,10 @@ class EmailService:
         if not self.user or not password:
             raise ValueError("Las credenciales SMTP no están configuradas correctamente en el archivo de configuración.")
         
-        # Crear contexto SSL seguro por defecto (valida certificados de CA y hostname)
+        # Crear contexto SSL seguro por defecto (valida certificados de CA y hostname).
+        # TLS 1.2 mínimo de forma explícita: no depender del default de la versión de Python.
         context = ssl.create_default_context()
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
         
         try:
             if self.port == 465:
@@ -69,9 +72,6 @@ class EmailService:
                     pass
                 self.server = None
             raise
-        finally:
-            if 'password' in locals():
-                del password
         
     def disconnect(self):
         """Cierra la conexión SMTP."""
@@ -79,16 +79,30 @@ class EmailService:
             self.server.quit()
             self.server = None
 
-    def send_email_with_attachment(self, to_email: str, subject: str, attachment_path: str, filename_override: str = None):
-        """Envía un correo con el archivo PDF adjunto."""
+    @staticmethod
+    def _sanitize_header(value: str) -> str:
+        """Neutraliza CR/LF/TAB en valores de cabecera (defensa contra header injection
+        desde datos del CSV o de la configuración) — M-03."""
+        return re.sub(r'[\r\n\t]+', ' ', value or '').strip()
+
+    def send_email_with_attachment(self, to_email: str, subject: str, attachment_path: str,
+                                   filename_override: str = None, idempotency_key: str = None):
+        """Envía un correo con el archivo PDF adjunto.
+
+        idempotency_key: identificador determinista del envío; genera un Message-ID estable
+        para permitir deduplicación/auditoría si un reintento repite un envío ambiguo.
+        """
         try:
             # Crear mensaje
             msg = MIMEMultipart('mixed')
-            msg['From'] = formataddr((self.sender_name, self.user))
+            msg['From'] = formataddr((self._sanitize_header(self.sender_name), self.user))
             msg['To'] = to_email
-            msg['Subject'] = Header(subject, 'utf-8')
+            msg['Subject'] = Header(self._sanitize_header(subject), 'utf-8')
             msg['Date'] = formatdate(localtime=True)
-            msg['Message-ID'] = make_msgid()
+            if idempotency_key:
+                msg['Message-ID'] = f"<{idempotency_key}@sems-pro.local>"
+            else:
+                msg['Message-ID'] = make_msgid()
             
             # Adjuntar logo local inline si existe (100% seguro y offline)
             has_logo = False

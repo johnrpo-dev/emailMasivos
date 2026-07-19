@@ -87,3 +87,13 @@ Para compilar la aplicación a un ejecutable portable de Windows utilizando PyIn
 pyinstaller Envio_Masivo_Seguro.spec
 ```
 El archivo ejecutable resultante se ubicará en la carpeta `dist/`.
+
+## 📀 Generar Instalador Windows (Inno Setup)
+Para generar el instalador formal con asistente de instalación, accesos directos y desinstalador:
+
+1. Compilar el ejecutable con PyInstaller (paso anterior).
+2. Generar el instalador con Inno Setup 6:
+   ```bash
+   iscc installer.iss
+   ```
+El instalador resultante se ubicará en `dist/installer/SEMS_Pro_Setup_1.0.1.exe`.

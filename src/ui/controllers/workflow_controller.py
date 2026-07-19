@@ -1,8 +1,6 @@
 # pyrefly: ignore [missing-import]
-import re
-import sys
 import os
-from tkinter import messagebox
+from src.ui import dialogs
 from src.core.workflow_orchestrator import WorkflowOrchestrator
 from src.ui.modals.results_modal import ResultsModal
 from src.core.license_manager import LicenseManager
@@ -19,17 +17,16 @@ class WorkflowController:
         """Prepara e inicia la orquestación del proceso en segundo plano."""
         self._retry_count = 0
         if not self.app.csv_path.get() or not self.app.pdf_dir.get():
-            messagebox.showwarning("Atención", "Selecciona el CSV y la carpeta de PDFs.")
+            dialogs.show_warning(self.app, "Atención", "Selecciona el CSV y la carpeta de PDFs.")
             return
-            
+
         from src.config.config_manager import ConfigManager
         config = ConfigManager.get_config()
         if not config.get("smtp_user") or not config.get("smtp_password"):
-            messagebox.showwarning("Atención", "Ve a la pestaña de Configuración e ingresa tus credenciales SMTP primero.")
+            dialogs.show_warning(self.app, "Atención", "Ve a la pestaña de Configuración e ingresa tus credenciales SMTP primero.")
             return
-            
-        self.app.home_panel.btn_start.configure(state="disabled", fg_color="#4b5563")
-        self.app.home_panel.btn_preview.configure(state="disabled", fg_color="#4b5563")
+
+        self.app.home_panel.set_busy(True)
         self.app.home_panel.progress_bar.set(0)
         self.app.home_panel.lbl_status.configure(text="Procesando...")
         
@@ -44,20 +41,28 @@ class WorkflowController:
                 self.app.session_batches.append(batch_record)
             self.app.after(0, _add)
 
+        # CONCURRENCIA (A-02): Tkinter no es thread-safe. TODO callback invocado desde los
+        # hilos worker debe marshalearse al hilo principal con app.after().
         def on_log(text):
-            self.app.home_panel.add_console_log(text)
+            self.app.after(0, lambda t=text: self.app.home_panel.add_console_log(t))
 
         def on_progress(text, progress=None):
             self.app.after(0, lambda: self.app.home_panel.update_ui_status(text, progress))
 
         def on_stats_update(total=None, success=None, failed=None):
-            self.app.home_panel.update_monitor_stats(total=total, success=success, failed=failed)
+            self.app.after(0, lambda t=total, s=success, f=failed:
+                           self.app.home_panel.update_monitor_stats(total=t, success=s, failed=f))
 
         def on_complete(errores, total, records_fallidos, email_corrections, pdf_corrections=None):
             def _complete():
                 try:
                     LicenseManager.update_last_run()
-                    
+
+                    # Depurar de los lotes anteriores en RAM los registros que este
+                    # lote acaba de entregar con éxito, para que "Reintentar" desde
+                    # el historial no duplique correos ya enviados.
+                    self._purge_recovered_failures()
+
                     exitosos_total = total - len(errores)
                     self.app.home_panel.update_ui_status("¡Proceso masivo completado!", 1.0)
                     self.app.home_panel.add_console_log(f"✓ COMPLETADO: {exitosos_total} exitosos, {len(errores)} fallidos.")
@@ -71,10 +76,9 @@ class WorkflowController:
                     if errores:
                         self.show_results_modal(errores, total, records_fallidos, email_corrections, pdf_corrections)
                     else:
-                        messagebox.showinfo("Completado", "El proceso ha finalizado con éxito sin errores.")
+                        dialogs.show_success(self.app, "Completado", "El proceso ha finalizado con éxito sin errores.")
                 finally:
-                    self.app.home_panel.btn_start.configure(state="normal", fg_color=("#10b981", "#059669"))
-                    self.app.home_panel.btn_preview.configure(state="normal", fg_color=("#3b82f6", "#2563eb"))
+                    self.app.home_panel.set_busy(False)
             self.app.after(0, _complete)
 
         orchestrator.start(
@@ -88,6 +92,39 @@ class WorkflowController:
             on_complete=on_complete,
             records_to_process=records_to_process
         )
+
+    def _purge_recovered_failures(self):
+        """Elimina de los lotes en RAM los registros fallidos crudos que ya fueron
+        entregados con éxito en un lote posterior.
+
+        Sin esta depuración, el modal de detalle de un lote antiguo seguiría
+        ofreciendo "Reintentar/Corregir" sobre destinatarios que ya recibieron su
+        correo tras una corrección, duplicando envíos. El cruce usa el HMAC de la
+        cédula (los envíos del historial están enmascarados) más el id_servicio.
+        """
+        sent_keys = set()
+        for lote in self.app.session_batches:
+            for ev in list(lote.get("envios", [])):
+                if ev.get("estado") == "exito":
+                    key = (ev.get("cedula_hash", ""), str(ev.get("id_servicio", "")).strip().lower())
+                    sent_keys.add(key)
+        if not sent_keys:
+            return
+
+        for lote in self.app.session_batches:
+            raw = lote.get("raw_records_fallidos")
+            if not raw:
+                continue
+            remaining = []
+            for record in raw:
+                cedula = str(record.get("cedula", "")).strip()
+                servicio = str(record.get("id_servicio", "")).strip().lower()
+                key = (self.app.compute_search_hash(cedula), servicio)
+                if key not in sent_keys:
+                    remaining.append(record)
+            if len(remaining) != len(raw):
+                lote["raw_records_fallidos"] = remaining
+                logger.info(f"Historial: {len(raw) - len(remaining)} registro(s) recuperados depurados del lote '{lote.get('csv_nombre', '')}'.")
 
     def _sync_records_with_current_csv(self, records_to_sync):
         """Recarga el archivo CSV en caliente y actualiza los campos de los registros
@@ -104,19 +141,29 @@ class WorkflowController:
             from src.core.data_manager import DataManager
             current_csv_records = DataManager.load_csv(csv_path)
             
-            # Construir un mapa por clave única compuesta (cedula, id_servicio)
+            # Construir un mapa por clave única compuesta (cedula, id_servicio).
+            # SEGURIDAD (M-04): si la clave está duplicada en el CSV, "el último gana"
+            # podría reasignar el email/PDF de una fila a otra persona. Las claves
+            # duplicadas se excluyen de la sincronización.
             csv_map = {}
+            duplicated_keys = set()
             for r in current_csv_records:
                 ced = str(r.get("cedula", "")).strip().lower()
                 srv = str(r.get("id_servicio", "")).strip().lower()
-                csv_map[(ced, srv)] = r
-                
+                key = (ced, srv)
+                if key in csv_map:
+                    duplicated_keys.add(key)
+                else:
+                    csv_map[key] = r
+            if duplicated_keys:
+                logger.warning(f"Sincronización: {len(duplicated_keys)} clave(s) (cedula, id_servicio) duplicadas en el CSV; esas filas no se sincronizarán.")
+
             # Actualizar campos de los registros pasados en memoria
             for record in records_to_sync:
                 ced = str(record.get("cedula", "")).strip().lower()
                 srv = str(record.get("id_servicio", "")).strip().lower()
-                
-                if (ced, srv) in csv_map:
+
+                if (ced, srv) in csv_map and (ced, srv) not in duplicated_keys:
                     updated_r = csv_map[(ced, srv)]
                     
                     # Si el usuario modificó datos en el CSV, los sincronizamos en caliente
@@ -138,7 +185,8 @@ class WorkflowController:
             
         self._retry_count += 1
         if self._retry_count > self.MAX_RETRIES:
-            messagebox.showwarning(
+            dialogs.show_warning(
+                self.app,
                 "Límite Alcanzado",
                 f"Se han alcanzado {self.MAX_RETRIES} reintentos máximos por seguridad.\n"
                 f"Verifique manualmente los correos restantes antes de reiniciar."
@@ -157,15 +205,16 @@ class WorkflowController:
             
             for record in records_fallidos:
                 email_original = str(record.get("email", "")).strip()
-                email_masked = mask_email(email_original)
+                # SEGURIDAD (C-01): búsqueda por email real normalizado (la máscara colisiona)
+                email_key = email_original.lower()
                 id_archivo_original = str(record.get("id_archivo", "")).strip()
-                
+
                 corrected = dict(record)
                 is_corrected = False
-                
-                if email_masked in email_corrections:
-                    corrected["email"] = email_corrections[email_masked]
-                    logger.info(f"Email corregido: {email_masked} -> {mask_email(email_corrections[email_masked])}")
+
+                if email_key in email_corrections:
+                    corrected["email"] = email_corrections[email_key]
+                    logger.info(f"Email corregido: {mask_email(email_original)} -> {mask_email(email_corrections[email_key])}")
                     is_corrected = True
                     
                 if id_archivo_original in pdf_corrections:
@@ -179,14 +228,14 @@ class WorkflowController:
                     remaining_records.append(record)
                     
             if not corrected_records:
-                messagebox.showinfo("Info", "No hay correcciones para aplicar.")
+                dialogs.show_info(self.app, "Info", "No hay correcciones para aplicar.")
                 return
                 
             records_to_run = corrected_records + remaining_records
         else:
             records_to_run = records_fallidos
             
-        self.app.home_panel.btn_start.configure(state="disabled", fg_color="#4b5563")
+        self.app.home_panel.set_busy(True)
         self.app.home_panel.progress_bar.set(0)
         self.app.home_panel.lbl_status.configure(
             text=f"Reintentando {len(records_to_run)} envios fallidos... (Intento {self._retry_count}/{self.MAX_RETRIES})"

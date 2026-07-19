@@ -11,7 +11,9 @@ class PIIFilter(logging.Filter):
     2. Catch-all: secuencias de 8+ dígitos sin contexto (red de seguridad).
     También filtra record.args para cubrir formateo %-style."""
     _contextual = re.compile(r'(?i)(c\.c\.|cc|nit|id|c[eé]dula|documento)([\s.:-]*)(\d{6,11})\b')
-    _catchall = re.compile(r'\b(\d{8,11})\b')
+    # Catch-all ampliado a 6+ dígitos (M-06): las cédulas antiguas de 6-7 dígitos
+    # también deben redactarse aunque no tengan prefijo contextual.
+    _catchall = re.compile(r'\b(\d{6,11})\b')
     
     def _redact(self, text):
         """Aplica redacción contextual primero, luego catch-all sobre el resultado."""

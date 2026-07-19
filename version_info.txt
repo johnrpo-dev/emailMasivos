@@ -1,0 +1,35 @@
+# UTF-8
+#
+# Recurso de información de versión de Windows para el ejecutable.
+# Referenciado desde Envio_Masivo_Seguro.spec (EXE(..., version='version_info.txt')).
+# Mantener FileVersion/ProductVersion sincronizados con MyAppVersion de installer.iss.
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(1, 0, 2, 0),
+    prodvers=(1, 0, 2, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable(
+        '040A04B0',
+        [
+          StringStruct('CompanyName', 'SEMS Pro'),
+          StringStruct('FileDescription', 'SEMS Pro — Sistema de Envíos Masivos Seguros'),
+          StringStruct('FileVersion', '1.0.2.0'),
+          StringStruct('InternalName', 'Envio_Masivo_Seguro'),
+          StringStruct('LegalCopyright', '© 2026 SEMS Pro. Todos los derechos reservados.'),
+          StringStruct('OriginalFilename', 'Envio_Masivo_Seguro.exe'),
+          StringStruct('ProductName', 'SEMS Pro'),
+          StringStruct('ProductVersion', '1.0.2.0')
+        ]
+      )
+    ]),
+    VarFileInfo([VarStruct('Translation', [1034, 1200])])
+  ]
+)

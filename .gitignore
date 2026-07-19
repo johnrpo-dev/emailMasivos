@@ -26,3 +26,5 @@ data/temp/
 correcciones.md
 pdfs_uy.md
 
+# Instalador generado por Inno Setup
+dist/installer/

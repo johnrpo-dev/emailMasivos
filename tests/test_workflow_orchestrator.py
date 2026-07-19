@@ -191,5 +191,42 @@ class TestWorkflowOrchestrator(unittest.TestCase):
         self.assertEqual(len(pdf_corrections), 0)
         self.assertEqual(len(self.records_fallidos), 1)
 
+    def test_email_corrections_keyed_by_real_email(self):
+        """C-01: las correcciones se indexan por email REAL. Dos correos distintos cuya
+        máscara colisiona (j***z@gmial.com) deben producir dos entradas independientes."""
+        records = [
+            {"email": "juan.perez@gmial.com", "id_archivo": "a.pdf", "id_servicio": "S1", "cedula": "111111"},
+            {"email": "jose.gomez@gmial.com", "id_archivo": "b.pdf", "id_servicio": "S2", "cedula": "222222"},
+        ]
+        email_corrections = {}
+        validos = self.orchestrator._pre_validate_emails(
+            records, self.hmac_key, self.batch_record, self.errores,
+            self.records_fallidos, email_corrections, None, None, None
+        )
+        self.assertEqual(validos, [])
+        self.assertEqual(len(email_corrections), 2)
+        self.assertEqual(email_corrections.get("juan.perez@gmial.com"), "juan.perez@gmail.com")
+        self.assertEqual(email_corrections.get("jose.gomez@gmial.com"), "jose.gomez@gmail.com")
+
+    @patch('src.core.workflow_orchestrator.EmailService')
+    def test_registro_incompleto_cuenta_como_fallo_reintentable(self, mock_email_service_class):
+        """A-04: una fila con datos obligatorios vacíos debe entrar en errores y en
+        records_fallidos (conteo honesto de éxitos + posibilidad de reintento)."""
+        mock_email_service_class.return_value = MagicMock()
+        record = {"email": "test@gmail.com", "id_archivo": "", "id_servicio": "S", "cedula": ""}
+        self.orchestrator._process_chunk_worker(
+            chunk_records=[record], worker_id=0, pdf_dir=self.pdf_dir, hmac_key=self.hmac_key,
+            subject_template="S {id_servicio}", batch_record=self.batch_record,
+            errores=self.errores, records_fallidos=self.records_fallidos,
+            on_progress=None, on_stats_update=None, on_log=None, lock=self.lock,
+            completed_count=self.completed_count, success_count=self.success_count,
+            failed_count=self.failed_count, total_validos=1, send_delay=0
+        )
+        self.assertEqual(len(self.errores), 1)
+        self.assertIn("incompletos", self.errores[0])
+        self.assertEqual(len(self.records_fallidos), 1)
+        self.assertEqual(self.failed_count[0], 1)
+
+
 if __name__ == '__main__':
     unittest.main()

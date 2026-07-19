@@ -17,7 +17,23 @@ def main():
         if not LicenseManager.is_license_active():
             sys.exit(0)
             
-    # 2. Si ya está activa o se acaba de activar con éxito, registrar el arranque y lanzar app
+    # 2. Aviso no bloqueante si la licencia venció pero sigue en periodo de gracia
+    if LicenseManager.get_license_state() == "grace":
+        import customtkinter as ctk
+        from src.ui import theme, dialogs
+        ctk.set_appearance_mode(theme.DEFAULT_APPEARANCE)
+        _tmp_root = ctk.CTk()
+        _tmp_root.withdraw()
+        dialogs.show_warning(
+            _tmp_root,
+            "Licencia vencida — Periodo de gracia",
+            f"Su licencia ha vencido. La aplicación seguirá funcionando durante un periodo "
+            f"de gracia de {LicenseManager.GRACE_DAYS} días.\n\n"
+            f"Contacte a su proveedor para renovar la suscripción y evitar la interrupción del servicio."
+        )
+        _tmp_root.destroy()
+
+    # 3. Si ya está activa o se acaba de activar con éxito, registrar el arranque y lanzar app
     LicenseManager.update_last_run()
     app = App()
     app.mainloop()

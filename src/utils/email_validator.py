@@ -186,14 +186,15 @@ def validate_email(email: str) -> EmailValidationResult:
     if domain_name in KNOWN_PROVIDERS:
         return EmailValidationResult(email=email, is_valid=True)
     
-    # Nivel 3: Para dominios desconocidos/corporativos, verificar DNS
-    # Ej: empresa.com.co -> verificar que exista
+    # Nivel 3: Para dominios desconocidos/corporativos, verificar existencia en DNS.
+    # Nota (M-05): esto resuelve la dirección del dominio (registro A/AAAA), NO sus
+    # registros MX; detecta dominios inexistentes o typos, no buzones inválidos.
     if not _domain_has_mail_server(domain):
         return EmailValidationResult(
             email=email,
             is_valid=False,
             error_type="dominio_inexistente",
-            message=f"El dominio '{domain}' no tiene servidores de correo validos"
+            message=f"El dominio '{domain}' no existe o no es alcanzable en DNS"
         )
     
     return EmailValidationResult(email=email, is_valid=True)

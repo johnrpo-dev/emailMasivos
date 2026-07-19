@@ -14,6 +14,10 @@ class LicenseManager:
     # Las licencias emitidas con el par anterior ya NO serán válidas tras esta actualización.
     PUBLIC_KEY_HEX = "4a20327707072ab45f34c2029a62848a441910ffd076de2f5812c49bb5c0c988"
 
+    # Periodo de gracia tras el vencimiento (días). Evita bloquear en seco a un
+    # cliente al día por un retraso administrativo en la renovación mensual.
+    GRACE_DAYS = 7
+
     @staticmethod
     def _parse_iso_datetime(iso_str: str) -> datetime:
         """Parsea una cadena ISO y se asegura de retornar un objeto datetime en UTC (aware)."""
@@ -56,42 +60,56 @@ class LicenseManager:
             return None
 
     @staticmethod
-    def is_license_active() -> bool:
-        """Verifica la validez de la licencia y la consistencia del reloj (monotonic tracking)."""
+    def get_license_state() -> str:
+        """Evalúa la licencia y la consistencia del reloj (monotonic tracking).
+
+        Retorna:
+            'active'   — licencia válida y vigente.
+            'grace'    — licencia vencida pero dentro del periodo de gracia (GRACE_DAYS).
+            'inactive' — sin licencia, firma inválida, vencida fuera de gracia o reloj alterado.
+        """
         try:
             license_key = keyring.get_password(LicenseManager.SERVICE_NAME, "license_key")
             exp_date_str = keyring.get_password(LicenseManager.SERVICE_NAME, "expiration_date")
             last_run_str = keyring.get_password(LicenseManager.SERVICE_NAME, "last_run")
-            
+
             if not license_key or not exp_date_str:
-                return False
+                return "inactive"
 
             # Verificar la firma criptográfica de la licencia guardada para evitar bypass local
             payload = LicenseManager.verify_signature(license_key)
             if not payload or payload.get("expires") != exp_date_str:
                 logger.critical("SEGURIDAD: La clave de licencia almacenada es inválida o ha sido alterada.")
-                return False
+                return "inactive"
 
             now = datetime.now(timezone.utc)
             exp_date = LicenseManager._parse_iso_datetime(exp_date_str)
-            
-            # 1. ¿Licencia expirada?
-            if now > exp_date:
-                logger.warning(f"La licencia de prueba/suscripción ha expirado el {exp_date_str}.")
-                return False
-                
-            # 2. ¿Reloj de Windows alterado hacia el pasado? (Tolerancia de 2 horas)
+
+            # 1. ¿Reloj de Windows alterado hacia el pasado? (Tolerancia de 2 horas)
             if last_run_str:
                 last_run = LicenseManager._parse_iso_datetime(last_run_str)
                 # Si el reloj actual está más de 2 horas por detrás del último arranque guardado
                 if now < (last_run - timedelta(hours=2)):
                     logger.error(f"Detección de alteración del reloj. Reloj actual: {now.isoformat()} | Último arranque registrado: {last_run_str}")
-                    return False
-                    
-            return True
+                    return "inactive"
+
+            # 2. ¿Licencia expirada? (con periodo de gracia para renovaciones tardías)
+            if now > exp_date:
+                if now <= exp_date + timedelta(days=LicenseManager.GRACE_DAYS):
+                    logger.warning(f"Licencia vencida el {exp_date_str}: operando en periodo de gracia de {LicenseManager.GRACE_DAYS} días.")
+                    return "grace"
+                logger.warning(f"La licencia de prueba/suscripción ha expirado el {exp_date_str} (gracia agotada).")
+                return "inactive"
+
+            return "active"
         except Exception as e:
             logger.error(f"Error al verificar el estado de la licencia en Keyring: {str(e)}")
-            return False
+            return "inactive"
+
+    @staticmethod
+    def is_license_active() -> bool:
+        """Compatibilidad: True si la licencia permite operar (vigente o en gracia)."""
+        return LicenseManager.get_license_state() in ("active", "grace")
 
     @staticmethod
     def save_license(license_base64: str, payload: dict) -> bool:

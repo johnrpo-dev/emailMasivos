@@ -26,7 +26,15 @@ class DataManager:
             if file_size > max_bytes:
                 raise ValueError(f"El archivo CSV excede el límite de {DataManager.MAX_FILE_SIZE_MB}MB ({file_size / (1024*1024):.1f}MB detectados)")
             
-            df = pd.read_csv(file_path, dtype=str, nrows=DataManager.MAX_ROWS)
+            # SEGURIDAD (C-02): leer una fila extra como centinela. Truncar en silencio
+            # significaría destinatarios que nunca reciben su documento sin que nadie lo sepa.
+            df = pd.read_csv(file_path, dtype=str, nrows=DataManager.MAX_ROWS + 1)
+            if len(df) > DataManager.MAX_ROWS:
+                raise ValueError(
+                    f"El archivo CSV supera el límite de {DataManager.MAX_ROWS} filas. "
+                    f"Divida el lote en archivos más pequeños; no se procesó ningún registro "
+                    f"para evitar envíos parciales silenciosos."
+                )
             
             # Limpiar nombres de columnas (espacios extras)
             df.columns = df.columns.str.strip()
