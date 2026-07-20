@@ -95,6 +95,9 @@ class HistoryView(ctk.CTkFrame):
             ctk.CTkLabel(stat_frame, text=f"Total: {total}", font=theme.font("body"), text_color=theme.TEXT_SECONDARY).pack(side="left", padx=10)
             ctk.CTkLabel(stat_frame, text=f"Éxitos: {exitos}", font=theme.font("body_strong"), text_color=theme.SUCCESS).pack(side="left", padx=10)
             ctk.CTkLabel(stat_frame, text=f"Fallos: {fallos}", font=theme.font("body_strong"), text_color=theme.DANGER).pack(side="left", padx=10)
+            recuperados = lote.get('recuperados', 0)
+            if recuperados:
+                ctk.CTkLabel(stat_frame, text=f"Recuperados: {recuperados}", font=theme.font("body_strong"), text_color=theme.INFO).pack(side="left", padx=10)
 
             PrimaryButton(
                 lote_card, text="Ver Detalle", width=100, height=theme.BTN_SM_H,

@@ -1,7 +1,7 @@
 import pikepdf
 import os
 import secrets
-from src.utils.logger import logger
+from src.utils.logger import logger, mask_filename
 
 class PDFCrypto:
     """Clase para manejar el cifrado de archivos PDF de forma segura."""
@@ -13,13 +13,14 @@ class PDFCrypto:
         Retorna la ruta del archivo temporal cifrado.
         """
         try:
+            # Los mensajes de excepción llegan al log persistente: nombre enmascarado (PII)
             if not os.path.exists(input_path):
-                raise FileNotFoundError(f"El archivo PDF no existe: {os.path.basename(input_path)}")
-            
+                raise FileNotFoundError(f"El archivo PDF no existe: {mask_filename(input_path)}")
+
             with open(input_path, 'rb') as f:
                 header = f.read(4)
             if header != b'%PDF':
-                raise ValueError(f'El archivo no es un PDF válido: {os.path.basename(input_path)}')
+                raise ValueError(f'El archivo no es un PDF válido: {mask_filename(input_path)}')
             
             # Owner password aleatoria (el usuario final nunca la ve)
             owner_pw = secrets.token_hex(16)
@@ -38,7 +39,7 @@ class PDFCrypto:
             return output_path
             
         except Exception as e:
-            logger.error(f"Error al cifrar PDF {os.path.basename(input_path)}: {str(e)}")
+            logger.error(f"Error al cifrar PDF {mask_filename(input_path)}: {str(e)}")
             raise
             
     @staticmethod

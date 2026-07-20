@@ -21,6 +21,9 @@ def main():
     if LicenseManager.get_license_state() == "grace":
         import customtkinter as ctk
         from src.ui import theme, dialogs
+        # Si venimos de ActivationModal (root ya destruido), las fuentes cacheadas
+        # apuntan a un Tk muerto: limpiar antes de crear este root temporal.
+        theme.reset_font_cache()
         ctk.set_appearance_mode(theme.DEFAULT_APPEARANCE)
         _tmp_root = ctk.CTk()
         _tmp_root.withdraw()

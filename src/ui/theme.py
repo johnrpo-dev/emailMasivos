@@ -85,7 +85,11 @@ BTN_DISABLED_FG = ("#c8d4dc", "#22304a")   # estado deshabilitado de cualquier b
 # ============================================================
 PROGRESS_FG   = BTN_PRIMARY_FG
 PROGRESS_BG   = ("#dde6ec", "#1f2d45")
-CONSOLE_TEXT  = ("#334155", "#94a3b8")
+
+# Consola de logs: estilo terminal, oscura en ambos modos para máxima legibilidad
+CONSOLE_BG     = ("#0f2534", "#040810")
+CONSOLE_TEXT   = ("#d3e4ef", "#b8cddd")
+CONSOLE_BORDER = ("#0f2534", "#1f2d45")
 
 # ============================================================
 # Espaciados, radios y dimensiones

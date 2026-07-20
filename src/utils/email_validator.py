@@ -65,14 +65,10 @@ DOMAIN_NAME_TYPOS = {
     "ouutlook": "outlook",
     "outlock": "outlook",
     # Live
-    "lve": "live",
     "liive": "live",
     "livee": "live",
-    "ive": "live",
-    "liv": "live",
     # MSN
     "msnn": "msn",
-    "mns": "msn",
     # Yahoo
     "yaho": "yahoo",
     "yahooo": "yahoo",
@@ -103,10 +99,12 @@ DOMAIN_NAME_TYPOS = {
     "protonmaill": "protonmail",
     "protnmail": "protonmail",
     # Zoho
-    "zho": "zoho",
     "zooh": "zoho",
     "zhoo": "zoho",
 }
+# Nota: se excluyen deliberadamente typos de <=3 letras ("ive", "liv", "zho", "mns",
+# "lve"): coinciden con nombres plausibles de dominios corporativos reales y
+# bloquear un correo legítimo es peor que dejar pasar un typo raro.
 
 # Proveedores conocidos: nombre correcto -> dominio mas comun
 # Si el nombre coincide exactamente, se considera valido sin importar TLD
@@ -122,6 +120,29 @@ KNOWN_PROVIDERS = {
     "icloud": "icloud.com",
     "protonmail": "protonmail.com",
     "zoho": "zoho.com",
+}
+
+# TLDs legítimos habituales en los proveedores conocidos (variantes por país).
+# Un TLD fuera de esta lista NO se acepta a ciegas: pasa por typo o por DNS.
+KNOWN_PROVIDER_TLDS = {
+    ".com", ".es", ".co", ".mx", ".fr", ".it", ".de", ".net",
+    ".ar", ".cl", ".pe", ".ec", ".com.co", ".com.mx", ".com.ar",
+    ".com.br", ".co.uk",
+}
+
+# Typos comunes de TLD -> corrección sugerida (auto-corregible en la app)
+TLD_TYPOS = {
+    ".con": ".com",
+    ".cmo": ".com",
+    ".ocm": ".com",
+    ".cm": ".com",
+    ".om": ".com",
+    ".comm": ".com",
+    ".coom": ".com",
+    ".vom": ".com",
+    ".xom": ".com",
+    ".col": ".com",
+    ".come": ".com",
 }
 
 
@@ -181,9 +202,30 @@ def validate_email(email: str) -> EmailValidationResult:
             message=f"Posible typo en dominio: '{domain}' -- Quisiste decir '{suggested_domain}'?",
             suggestion=suggested_email
         )
-    # Si el nombre del proveedor esta bien escrito (gmail, hotmail, etc.),
-    # es valido sin importar el TLD (.com, .es, .co, etc.)
+    # Nombre de proveedor bien escrito (gmail, hotmail, etc.): validar también el TLD.
+    # Antes se aceptaba cualquier TLD a ciegas y "gmail.con" pasaba como válido.
     if domain_name in KNOWN_PROVIDERS:
+        tld_part = domain[len(domain_name):]  # ".com", ".con", ".com.co", ...
+        if tld_part in KNOWN_PROVIDER_TLDS:
+            return EmailValidationResult(email=email, is_valid=True)
+        if tld_part in TLD_TYPOS:
+            suggested_domain = domain_name + TLD_TYPOS[tld_part]
+            suggested_email = email.split("@")[0] + "@" + suggested_domain
+            return EmailValidationResult(
+                email=email,
+                is_valid=False,
+                error_type="typo_dominio",
+                message=f"Posible typo en dominio: '{domain}' -- Quisiste decir '{suggested_domain}'?",
+                suggestion=suggested_email
+            )
+        # TLD inusual para un proveedor conocido: verificar existencia real por DNS
+        if not _domain_has_mail_server(domain):
+            return EmailValidationResult(
+                email=email,
+                is_valid=False,
+                error_type="dominio_inexistente",
+                message=f"El dominio '{domain}' no existe o no es alcanzable en DNS"
+            )
         return EmailValidationResult(email=email, is_valid=True)
     
     # Nivel 3: Para dominios desconocidos/corporativos, verificar existencia en DNS.

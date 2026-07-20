@@ -41,59 +41,59 @@ class ConfigManager:
             "pdf_password_suffix": ""
         }
         
+        # ROBUSTEZ: la lectura del Keyring es independiente del estado del JSON.
+        # Antes, un config.json corrupto (o ausente) hacía retornar defaults sin
+        # consultar el Keyring, "ocultando" credenciales SMTP que seguían intactas.
+        config = dict(default_config)
+        data = {}
         config_file = ConfigManager._resolve_config_file()
-        if not os.path.exists(config_file):
-            return default_config
-
-        try:
-            with open(config_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                
-            # Combinar datos cargados con defaults por si faltan claves
-            config = {**default_config, **data}
-            
-            # Obtener credenciales seguras desde Windows Credential Manager (Keyring)
+        if os.path.exists(config_file):
             try:
-                creds_str = keyring.get_password(ConfigManager.SERVICE_NAME, "smtp_credentials")
-                if creds_str:
-                    creds = json.loads(creds_str)
-                    config["smtp_user"] = creds.get("user", "")
-                    config["smtp_password"] = creds.get("password", "")
-                else:
-                    # Fallback de compatibilidad para versiones anteriores que tenían smtp_user en config.json.
-                    # Si encontramos datos legados, los migramos automáticamente a Keyring y limpiamos el JSON.
-                    old_user = config.get("smtp_user", "")
-                    if old_user:
-                        pw = keyring.get_password(ConfigManager.SERVICE_NAME, old_user)
-                        config["smtp_password"] = pw if pw else ""
-                        
-                        # Migración automática: persistir en el nuevo formato de Keyring
-                        if pw:
-                            creds = json.dumps({"user": old_user, "password": pw})
-                            keyring.set_password(ConfigManager.SERVICE_NAME, "smtp_credentials", creds)
-                            logger.info("Credenciales migradas automáticamente al nuevo formato de Keyring.")
-                        
-                        # Limpiar smtp_user del archivo JSON en disco (en la misma ruta leída)
-                        if "smtp_user" in data:
-                            del data["smtp_user"]
-                            try:
-                                with open(config_file, 'w', encoding='utf-8') as fw:
-                                    json.dump(data, fw, indent=4, ensure_ascii=False)
-                                logger.info("Campo 'smtp_user' eliminado de config.json tras migración.")
-                            except Exception as ew:
-                                logger.warning(f"No se pudo limpiar smtp_user de config.json: {ew}")
-                    else:
-                        config["smtp_password"] = ""
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                # Combinar datos cargados con defaults por si faltan claves
+                config = {**default_config, **data}
             except Exception as e:
-                logger.critical(f"Fallo crítico al acceder a la bóveda de credenciales del SO (Keyring): {e}")
-                config["smtp_password"] = ""
-                config["keyring_failed"] = True
-                
-            return config
-            
+                logger.error(f"Error al leer config.json (se usarán valores por defecto): {e}")
+
+        # Obtener credenciales seguras desde Windows Credential Manager (Keyring)
+        try:
+            creds_str = keyring.get_password(ConfigManager.SERVICE_NAME, "smtp_credentials")
+            if creds_str:
+                creds = json.loads(creds_str)
+                config["smtp_user"] = creds.get("user", "")
+                config["smtp_password"] = creds.get("password", "")
+            else:
+                # Fallback de compatibilidad para versiones anteriores que tenían smtp_user en config.json.
+                # Si encontramos datos legados, los migramos automáticamente a Keyring y limpiamos el JSON.
+                old_user = config.get("smtp_user", "")
+                if old_user:
+                    pw = keyring.get_password(ConfigManager.SERVICE_NAME, old_user)
+                    config["smtp_password"] = pw if pw else ""
+
+                    # Migración automática: persistir en el nuevo formato de Keyring
+                    if pw:
+                        creds = json.dumps({"user": old_user, "password": pw})
+                        keyring.set_password(ConfigManager.SERVICE_NAME, "smtp_credentials", creds)
+                        logger.info("Credenciales migradas automáticamente al nuevo formato de Keyring.")
+
+                    # Limpiar smtp_user del archivo JSON en disco (en la misma ruta leída)
+                    if "smtp_user" in data:
+                        del data["smtp_user"]
+                        try:
+                            with open(config_file, 'w', encoding='utf-8') as fw:
+                                json.dump(data, fw, indent=4, ensure_ascii=False)
+                            logger.info("Campo 'smtp_user' eliminado de config.json tras migración.")
+                        except Exception as ew:
+                            logger.warning(f"No se pudo limpiar smtp_user de config.json: {ew}")
+                else:
+                    config["smtp_password"] = ""
         except Exception as e:
-            logger.error(f"Error al leer config.json: {e}")
-            return default_config
+            logger.critical(f"Fallo crítico al acceder a la bóveda de credenciales del SO (Keyring): {e}")
+            config["smtp_password"] = ""
+            config["keyring_failed"] = True
+
+        return config
             
     @staticmethod
     def save_config(smtp_user, smtp_password, smtp_host, smtp_port, email_subject, email_body, send_delay=2, sender_name="SEMS Pro", logo_path="", pdf_password_prefix="", pdf_password_suffix=""):

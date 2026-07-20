@@ -8,6 +8,18 @@ from src.ui.components import Card, ThemedTextbox, apply_window_icon, center_win
 class PreviewModal(ctk.CTkToplevel):
     """Modal de Vista Previa de Correo desacoplado de la ventana coordinadora."""
     def __init__(self, parent, csv_path_str):
+        # Cargar y verificar el CSV ANTES de crear la ventana: si falla, se muestra
+        # solo el diálogo de error, sin el parpadeo de un modal vacío con grab.
+        try:
+            records = DataManager.load_csv(csv_path_str)
+        except Exception as e:
+            dialogs.show_error(parent, "Error", f"No se pudo cargar el CSV: {str(e)}")
+            return
+
+        if not records:
+            dialogs.show_warning(parent, "Atención", "El archivo CSV está vacío.")
+            return
+
         super().__init__(parent)
 
         self.title("Vista Previa de Correo")
@@ -17,19 +29,6 @@ class PreviewModal(ctk.CTkToplevel):
         self.grab_set()
         self.configure(fg_color=theme.APP_BG)
         apply_window_icon(self)
-
-        # Cargar y verificar datos del CSV
-        try:
-            records = DataManager.load_csv(csv_path_str)
-        except Exception as e:
-            dialogs.show_error(parent, "Error", f"No se pudo cargar el CSV: {str(e)}")
-            self.destroy()
-            return
-
-        if not records:
-            dialogs.show_warning(parent, "Atención", "El archivo CSV está vacío.")
-            self.destroy()
-            return
 
         # Tomar el primer registro de prueba
         record = records[0]

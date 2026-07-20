@@ -2,7 +2,7 @@ import customtkinter as ctk
 from src.ui import theme
 from src.ui.components import (
     Card, SectionHeader, CardTitle, StatBox,
-    PrimaryButton, SecondaryButton, ThemedEntry, ThemedTextbox,
+    PrimaryButton, SecondaryButton, ThemedEntry,
 )
 
 class HomeView(ctk.CTkFrame):
@@ -62,6 +62,8 @@ class HomeView(ctk.CTkFrame):
         self.btn_start.grid(row=0, column=1, padx=(10, 0), sticky="ew")
 
         # === PANEL DE MONITOREO EN TIEMPO REAL ===
+        # La consola se empaqueta al final dentro de la card: si falta espacio
+        # vertical, pack recorta lo último — por eso la card reserva expand.
         self.card_monitor = Card(self)
         self.card_monitor.pack(fill="both", expand=True, pady=(0, 10))
 
@@ -81,10 +83,13 @@ class HomeView(ctk.CTkFrame):
         self.stat_failed = StatBox(stats_grid, "Fallidos", accent="danger")
         self.stat_failed.grid(row=0, column=2, padx=5, pady=5, sticky="nsew")
 
-        # Consola de logs en tiempo real
-        self.txt_console = ThemedTextbox(
-            self.card_monitor, height=80, font=theme.font("mono"),
-            text_color=theme.CONSOLE_TEXT, corner_radius=theme.RAD_MD
+        # Consola de logs en tiempo real (estilo terminal: fondo oscuro en ambos
+        # modos y texto claro para legibilidad; salto de línea por palabra)
+        self.txt_console = ctk.CTkTextbox(
+            self.card_monitor, height=110, font=theme.font("mono"),
+            fg_color=theme.CONSOLE_BG, text_color=theme.CONSOLE_TEXT,
+            border_width=1, border_color=theme.CONSOLE_BORDER,
+            corner_radius=theme.RAD_MD, wrap="word"
         )
         self.txt_console.pack(fill="both", expand=True, padx=20, pady=(0, 15))
         self.txt_console.insert("0.0", ">>> Sistema listo. Esperando inicio de proceso...\n")

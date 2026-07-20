@@ -39,6 +39,10 @@ Separación estricta entre UI y lógica de negocio:
 - **`src/config/config_manager.py`** — configuración no sensible en `config.json`; credenciales SMTP solo en Keyring (servicio `SEMS_App`), nunca en el JSON.
 - **`src/utils/`** — `logger.py` (incluye `mask_email` para enmascarar PII), `email_validator.py`.
 
+## Reglas de negocio (decisiones intencionales; no "corregir")
+
+- **Filas duplicadas en el CSV son válidas**: un paciente con varios procesos el mismo día (ej. rayos X y audiometría) aparece en varias filas y debe recibir un correo por cada documento. No deduplicar ni advertir.
+
 ## Convenciones de seguridad (auditadas; preservar al editar)
 
 - Nunca registrar en logs correos completos, rutas absolutas, cédulas ni contraseñas — usar `mask_email` y `os.path.basename`.

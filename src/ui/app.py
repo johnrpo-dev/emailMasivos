@@ -28,10 +28,11 @@ class App(ctk.CTk):
         theme.reset_font_cache()
 
         self.title("SEMS Pro - Envíos Masivos")
-        # Reducimos la altura por defecto a 690px para pantallas de 15" y permitimos redimensionar libremente
-        self.geometry("850x690")
+        # Altura por defecto 730px: da aire a la consola de logs del monitor;
+        # sigue entrando en pantallas de 15" (768px) y se puede redimensionar.
+        self.geometry("850x730")
         self.resizable(True, True)
-        self.minsize(820, 620)
+        self.minsize(820, 640)
         apply_window_icon(self)
 
         # Inicializar historial efímero en memoria RAM (Zero-Footprint por diseño)
@@ -83,6 +84,18 @@ class App(ctk.CTk):
         # Seguridad: Manejar cierre de ventana para limpiar archivos temporales
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
         atexit.register(self._emergency_cleanup_temp_files)
+
+        # Latido de licencia: refresca la marca last_run cada 10 minutos para que
+        # la detección de retroceso de reloj no dependa solo del arranque.
+        self._license_heartbeat()
+
+    def _license_heartbeat(self):
+        from src.core.license_manager import LicenseManager
+        try:
+            LicenseManager.update_last_run()
+        except Exception:
+            pass
+        self.after(600000, self._license_heartbeat)
         
     def load_settings(self):
         config = ConfigManager.get_config()

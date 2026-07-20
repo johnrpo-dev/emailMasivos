@@ -12,7 +12,7 @@ from src.core.data_manager import DataManager
 from src.core.pdf_crypto import PDFCrypto
 from src.core.email_service import EmailService
 from src.config.config_manager import ConfigManager
-from src.utils.logger import logger, mask_email
+from src.utils.logger import logger, mask_email, mask_filename
 from src.utils.email_validator import validate_email
 
 class WorkflowOrchestrator:
@@ -22,10 +22,6 @@ class WorkflowOrchestrator:
     el procesamiento masivo de la capa de interfaz de usuario de CustomTkinter.
     """
     
-    def __init__(self):
-        self._retry_count = 0
-        self.MAX_RETRIES = 2
-
     def start(self, csv_path: str, pdf_dir: str,
               hmac_key: bytes = None,
               on_batch_added=None,
@@ -120,18 +116,19 @@ class WorkflowOrchestrator:
                 return
             
             # === FASE 2: Envío de correos válidos en Paralelo ===
-            self._dispatch_workers(
-                records_validos, pdf_dir, hmac_key, subject_template, 
+            exitosos_total, fallidos_total = self._dispatch_workers(
+                records_validos, pdf_dir, hmac_key, subject_template,
                 batch_record, errores, records_fallidos, email_corrections,
                 len(records) - len(records_validos),
                 on_progress, on_stats_update, on_log, send_delay,
                 pdf_corrections
             )
-            
-            # Consolidar totales del lote procesado
-            exitosos_total = total - len(errores)
+
+            # Consolidar totales del lote con los contadores reales de los workers
+            # (única fuente de verdad: "total - len(errores)" divergía del monitor
+            # en vivo cuando un hilo terminaba de forma anómala).
             batch_record["exitosos"] = exitosos_total
-            batch_record["fallidos"] = len(errores)
+            batch_record["fallidos"] = fallidos_total
             batch_record["raw_records_fallidos"] = records_fallidos
             batch_record["raw_email_corrections"] = email_corrections
             batch_record["raw_pdf_corrections"] = pdf_corrections
@@ -275,8 +272,9 @@ class WorkflowOrchestrator:
                 for w_id, chunk in enumerate(chunks)
             ]
 
-        # RESILIENCIA (A-03): consultar los futures. Sin esto, una excepción no controlada
-        # en un hilo descarta su chunk completo en silencio y el lote reporta éxito falso.
+        # RESILIENCIA (A-03): consultar los futures como último recurso. El worker ya
+        # registra sus registros restantes como fallidos si revienta; este bloque solo
+        # cubriría una excepción fuera de ese manejo.
         for w_id, future in enumerate(futures):
             exc = future.exception()
             if exc:
@@ -285,6 +283,38 @@ class WorkflowOrchestrator:
                     errores.append(f"Hilo de envío {w_id}: fallo interno no controlado ({self._sanitize_error(exc)})")
                 if on_log:
                     on_log(f"✗ FALLO INTERNO: El hilo {w_id} se detuvo inesperadamente. Revise el reporte.")
+
+        return success_count[0], failed_count[0]
+
+    def _register_chunk_failures(self, pending_records, err_msg, worker_id, batch_record,
+                                 errores, records_fallidos, hmac_key, lock,
+                                 completed_count, failed_count, total_validos,
+                                 on_stats_update, on_log, on_progress):
+        """Registra como fallidos reintentables todos los registros pendientes de un chunk.
+
+        INTEGRIDAD (A-03 reforzado): si un hilo muere a mitad de su chunk, cada registro
+        no procesado debe quedar en errores/records_fallidos/envios; de lo contrario se
+        contarían como éxito y serían irrecuperables para el reintento.
+        """
+        with lock:
+            for rec in pending_records:
+                rec_email = rec.get('email', '')
+                errores.append(f"{mask_email(rec_email)}: {err_msg}")
+                records_fallidos.append(rec)
+                completed_count[0] += 1
+                failed_count[0] += 1
+                if on_stats_update:
+                    on_stats_update(failed=failed_count[0])
+                if on_log:
+                    on_log(f"✗ ERROR HILO {worker_id}: {mask_email(rec_email)} ({err_msg})")
+                count = completed_count[0]
+                if on_progress:
+                    on_progress(f"Procesando {count} de {total_validos}: {mask_email(rec_email)} (Fallo)", count / total_validos)
+                self._register_envio(
+                    batch_record, rec_email, rec.get("cedula", ""),
+                    rec.get("id_archivo", ""), rec.get("id_servicio", ""),
+                    hmac_key, "error", err_msg
+                )
 
     def _sanitize_error(self, exception: Exception) -> str:
         """Sanitiza mensajes de error de SMTP/Red para evitar fugas de información interna (como IPs o hosts)."""
@@ -315,45 +345,40 @@ class WorkflowOrchestrator:
             email_service.connect()
         except Exception as e:
             logger.error(f"Hilo {worker_id} no pudo conectar a SMTP: {str(e)}")
-            err_msg = self._sanitize_error(e)
-            with lock:
-                for rec in chunk_records:
-                    rec_email = rec.get('email', '')
-                    errores.append(f"{mask_email(rec_email)}: {err_msg}")
-                    records_fallidos.append(rec)
-                    completed_count[0] += 1
-                    failed_count[0] += 1
-                    if on_stats_update:
-                        on_stats_update(failed=failed_count[0])
-                    if on_log:
-                        on_log(f"✗ ERROR HILO {worker_id}: {mask_email(rec_email)} (Fallo conexión SMTP)")
-                    
-                    count = completed_count[0]
-                    progress = count / total_validos
-                    if on_progress:
-                        on_progress(f"Procesando {count} de {total_validos}: {mask_email(rec_email)} (Fallo)", progress)
-                    
-                    # Registrar error en historial efímero
-                    self._register_envio(
-                        batch_record, rec_email, rec.get("cedula", ""),
-                        rec.get("id_archivo", ""), rec.get("id_servicio", ""),
-                        hmac_key, "error", err_msg
-                    )
+            self._register_chunk_failures(
+                chunk_records, self._sanitize_error(e), worker_id, batch_record,
+                errores, records_fallidos, hmac_key, lock,
+                completed_count, failed_count, total_validos,
+                on_stats_update, on_log, on_progress
+            )
             return
-        
+
         try:
             # Cargar configuraciones de contraseña PDF una vez por worker
             config = ConfigManager.get_config()
             pwd_prefix = config.get("pdf_password_prefix", "")
             pwd_suffix = config.get("pdf_password_suffix", "")
-            
-            for record in chunk_records:
-                self._process_single_record(
-                    record, worker_id, email_service, pdf_dir, hmac_key,
-                    subject_template, batch_record, errores, records_fallidos,
-                    on_progress, on_stats_update, on_log, lock,
-                    completed_count, success_count, failed_count, total_validos, send_delay,
-                    pdf_corrections, pwd_prefix, pwd_suffix, throttle
+
+            idx = 0
+            try:
+                for idx, record in enumerate(chunk_records):
+                    self._process_single_record(
+                        record, worker_id, email_service, pdf_dir, hmac_key,
+                        subject_template, batch_record, errores, records_fallidos,
+                        on_progress, on_stats_update, on_log, lock,
+                        completed_count, success_count, failed_count, total_validos, send_delay,
+                        pdf_corrections, pwd_prefix, pwd_suffix, throttle
+                    )
+            except Exception as e:
+                # INTEGRIDAD (A-03 reforzado): si el hilo revienta a mitad del chunk,
+                # el registro en curso y los restantes se registran como fallidos
+                # reintentables en vez de perderse contados como éxito.
+                logger.critical(f"Hilo {worker_id}: excepción no controlada a mitad de chunk: {str(e)}")
+                self._register_chunk_failures(
+                    chunk_records[idx:], self._sanitize_error(e), worker_id, batch_record,
+                    errores, records_fallidos, hmac_key, lock,
+                    completed_count, failed_count, total_validos,
+                    on_stats_update, on_log, on_progress
                 )
         finally:
             # RESILIENCIA (A-03): quit() puede lanzar SMTPServerDisconnected si el servidor
@@ -444,7 +469,7 @@ class WorkflowOrchestrator:
                 else:
                     err_msg = f"PDF no encontrado ({id_archivo_sanitized})"
                     
-                logger.error(f"Falta el archivo PDF: {os.path.basename(input_pdf)} (Destino: {mask_email(email)})")
+                logger.error(f"Falta el archivo PDF: {mask_filename(input_pdf)} (Destino: {mask_email(email)})")
                 errores.append(f"{mask_email(email)}: {err_msg}")
                 records_fallidos.append(record)
                 completed_count[0] += 1
@@ -555,7 +580,7 @@ class WorkflowOrchestrator:
         real_input = os.path.normcase(os.path.realpath(input_pdf))
         real_dir = os.path.normcase(os.path.realpath(pdf_dir))
         if not real_input.startswith(real_dir + os.sep) and real_input != real_dir:
-            logger.error(f"Intento de path traversal detectado: {id_archivo}")
+            logger.error(f"Intento de path traversal detectado: {mask_filename(id_archivo)}")
             return None, id_archivo_sanitized, f"Ruta de archivo sospechosa activa bloqueada ({id_archivo})"
             
         # Si existe físicamente con su ruta original, resolver a esa

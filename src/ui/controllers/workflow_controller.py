@@ -4,7 +4,7 @@ from src.ui import dialogs
 from src.core.workflow_orchestrator import WorkflowOrchestrator
 from src.ui.modals.results_modal import ResultsModal
 from src.core.license_manager import LicenseManager
-from src.utils.logger import logger, mask_email
+from src.utils.logger import logger, mask_email, mask_filename
 
 class WorkflowController:
     """Controlador encargado de coordinar la ejecución del flujo de envío masivo y lógica de reintentos."""
@@ -12,9 +12,25 @@ class WorkflowController:
         self.app = app
         self._retry_count = 0
         self.MAX_RETRIES = 10
+        # Candado de exclusión: evita lanzar dos workflows concurrentes (envíos
+        # duplicados) desde Iniciar Proceso o los botones de reintento de los modales.
+        self._workflow_active = False
+
+    def is_busy(self) -> bool:
+        """Indica si hay un workflow de envío en ejecución."""
+        return self._workflow_active
+
+    def _warn_busy(self):
+        dialogs.show_warning(
+            self.app, "Proceso en curso",
+            "Ya hay un envío en ejecución. Espere a que termine antes de iniciar o reintentar otro."
+        )
 
     def start_process(self):
         """Prepara e inicia la orquestación del proceso en segundo plano."""
+        if self._workflow_active:
+            self._warn_busy()
+            return
         self._retry_count = 0
         if not self.app.csv_path.get() or not self.app.pdf_dir.get():
             dialogs.show_warning(self.app, "Atención", "Selecciona el CSV y la carpeta de PDFs.")
@@ -26,6 +42,7 @@ class WorkflowController:
             dialogs.show_warning(self.app, "Atención", "Ve a la pestaña de Configuración e ingresa tus credenciales SMTP primero.")
             return
 
+        self._workflow_active = True
         self.app.home_panel.set_busy(True)
         self.app.home_panel.progress_bar.set(0)
         self.app.home_panel.lbl_status.configure(text="Procesando...")
@@ -63,7 +80,7 @@ class WorkflowController:
                     # el historial no duplique correos ya enviados.
                     self._purge_recovered_failures()
 
-                    exitosos_total = total - len(errores)
+                    exitosos_total = max(0, total - len(errores))
                     self.app.home_panel.update_ui_status("¡Proceso masivo completado!", 1.0)
                     self.app.home_panel.add_console_log(f"✓ COMPLETADO: {exitosos_total} exitosos, {len(errores)} fallidos.")
                     
@@ -75,9 +92,12 @@ class WorkflowController:
                     
                     if errores:
                         self.show_results_modal(errores, total, records_fallidos, email_corrections, pdf_corrections)
-                    else:
+                    elif total > 0:
                         dialogs.show_success(self.app, "Completado", "El proceso ha finalizado con éxito sin errores.")
+                    else:
+                        dialogs.show_warning(self.app, "Sin registros", "El archivo CSV no contiene registros para procesar.")
                 finally:
+                    self._workflow_active = False
                     self.app.home_panel.set_busy(False)
             self.app.after(0, _complete)
 
@@ -115,16 +135,56 @@ class WorkflowController:
             raw = lote.get("raw_records_fallidos")
             if not raw:
                 continue
-            remaining = []
+
+            # SEGURIDAD (M-04, mismo caveat que la sincronización con CSV): si dos
+            # registros fallidos distintos comparten (cedula, id_servicio), el éxito
+            # de uno NO debe suprimir el reintento del otro. Las claves duplicadas
+            # dentro del lote quedan excluidas de la purga.
+            keys = []
+            key_counts = {}
             for record in raw:
                 cedula = str(record.get("cedula", "")).strip()
                 servicio = str(record.get("id_servicio", "")).strip().lower()
                 key = (self.app.compute_search_hash(cedula), servicio)
-                if key not in sent_keys:
+                keys.append(key)
+                key_counts[key] = key_counts.get(key, 0) + 1
+
+            remaining = []
+            recovered_keys = set()
+            for record, key in zip(raw, keys):
+                if key in sent_keys and key_counts[key] == 1:
+                    recovered_keys.add(key)
+                else:
                     remaining.append(record)
-            if len(remaining) != len(raw):
-                lote["raw_records_fallidos"] = remaining
-                logger.info(f"Historial: {len(raw) - len(remaining)} registro(s) recuperados depurados del lote '{lote.get('csv_nombre', '')}'.")
+
+            if not recovered_keys:
+                continue
+
+            lote["raw_records_fallidos"] = remaining
+
+            # Consistencia del historial: el envío recuperado deja de figurar como
+            # "Fallido" permanente y se marca con su estado real.
+            for ev in lote.get("envios", []):
+                if ev.get("estado") != "error":
+                    continue
+                ev_key = (ev.get("cedula_hash", ""), str(ev.get("id_servicio", "")).strip().lower())
+                if ev_key in recovered_keys:
+                    ev["estado"] = "recuperado"
+                    base = ev.get("detalles") or ""
+                    nota = "Entregado con éxito en un reintento posterior"
+                    ev["detalles"] = f"{base} — {nota}" if base else nota
+            lote["recuperados"] = lote.get("recuperados", 0) + len(recovered_keys)
+
+            # Podar las correcciones ya aplicadas: sin esto el modal del lote seguiría
+            # ofreciendo "Corregir y Reintentar" sobre correcciones sin destinatario.
+            remaining_emails = {str(r.get("email", "")).strip().lower() for r in remaining}
+            remaining_archivos = {str(r.get("id_archivo", "")).strip() for r in remaining}
+            ec = lote.get("raw_email_corrections") or {}
+            lote["raw_email_corrections"] = {k: v for k, v in ec.items() if k in remaining_emails}
+            pc = lote.get("raw_pdf_corrections") or {}
+            lote["raw_pdf_corrections"] = {k: v for k, v in pc.items() if k in remaining_archivos}
+
+            logger.info(f"Historial: {len(recovered_keys)} registro(s) recuperados depurados del lote '{lote.get('csv_nombre', '')}'.")
 
     def _sync_records_with_current_csv(self, records_to_sync):
         """Recarga el archivo CSV en caliente y actualiza los campos de los registros
@@ -182,9 +242,14 @@ class WorkflowController:
         """Reintenta el envío de un lote de registros fallidos (con opción de aplicar correcciones automáticas)."""
         if not records_fallidos:
             return
-            
-        self._retry_count += 1
-        if self._retry_count > self.MAX_RETRIES:
+
+        if self._workflow_active:
+            self._warn_busy()
+            return
+
+        # Verificar el límite sin consumir el intento todavía: los retornos
+        # tempranos (p. ej. "no hay correcciones") no deben gastar reintentos.
+        if self._retry_count + 1 > self.MAX_RETRIES:
             dialogs.show_warning(
                 self.app,
                 "Límite Alcanzado",
@@ -219,7 +284,7 @@ class WorkflowController:
                     
                 if id_archivo_original in pdf_corrections:
                     corrected["id_archivo"] = pdf_corrections[id_archivo_original]
-                    logger.info(f"PDF corregido: {id_archivo_original} -> {pdf_corrections[id_archivo_original]}")
+                    logger.info(f"PDF corregido: {mask_filename(id_archivo_original)} -> {mask_filename(pdf_corrections[id_archivo_original])}")
                     is_corrected = True
                     
                 if is_corrected:
@@ -234,7 +299,9 @@ class WorkflowController:
             records_to_run = corrected_records + remaining_records
         else:
             records_to_run = records_fallidos
-            
+
+        self._retry_count += 1
+        self._workflow_active = True
         self.app.home_panel.set_busy(True)
         self.app.home_panel.progress_bar.set(0)
         self.app.home_panel.lbl_status.configure(

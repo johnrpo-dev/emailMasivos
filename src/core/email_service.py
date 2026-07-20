@@ -96,7 +96,7 @@ class EmailService:
             # Crear mensaje
             msg = MIMEMultipart('mixed')
             msg['From'] = formataddr((self._sanitize_header(self.sender_name), self.user))
-            msg['To'] = to_email
+            msg['To'] = self._sanitize_header(to_email)
             msg['Subject'] = Header(self._sanitize_header(subject), 'utf-8')
             msg['Date'] = formatdate(localtime=True)
             if idempotency_key:

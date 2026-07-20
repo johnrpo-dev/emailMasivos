@@ -92,6 +92,11 @@ class LicenseManager:
                 if now < (last_run - timedelta(hours=2)):
                     logger.error(f"Detección de alteración del reloj. Reloj actual: {now.isoformat()} | Último arranque registrado: {last_run_str}")
                     return "inactive"
+            else:
+                # Con licencia guardada siempre debería existir last_run (save_license lo
+                # escribe). Su ausencia deja la detección de retroceso de reloj sin ancla:
+                # registrarlo como anomalía en vez de saltarla en silencio.
+                logger.warning("SEGURIDAD: no existe marca 'last_run' en Keyring; la detección de retroceso de reloj queda sin referencia hasta el próximo registro.")
 
             # 2. ¿Licencia expirada? (con periodo de gracia para renovaciones tardías)
             if now > exp_date:
@@ -126,8 +131,21 @@ class LicenseManager:
 
     @staticmethod
     def update_last_run():
-        """Actualiza la marca del último arranque exitoso para mantener consistencia horaria."""
+        """Actualiza la marca del último arranque exitoso para mantener consistencia horaria.
+
+        Monotónica: nunca retrocede. Si el reloj actual está por detrás de la marca
+        guardada, sobrescribirla "lavaría" un retroceso de reloj y anularía la detección.
+        """
         try:
-            keyring.set_password(LicenseManager.SERVICE_NAME, "last_run", datetime.now(timezone.utc).isoformat())
+            now = datetime.now(timezone.utc)
+            stored = keyring.get_password(LicenseManager.SERVICE_NAME, "last_run")
+            if stored:
+                try:
+                    if now < LicenseManager._parse_iso_datetime(stored):
+                        logger.warning("last_run no actualizado: el reloj actual está por detrás de la marca guardada (posible retroceso de reloj).")
+                        return
+                except Exception:
+                    pass  # Marca ilegible: se sobrescribe con la actual
+            keyring.set_password(LicenseManager.SERVICE_NAME, "last_run", now.isoformat())
         except Exception as e:
             logger.warning(f"No se pudo actualizar last_run en Keyring: {str(e)}")

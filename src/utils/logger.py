@@ -66,9 +66,16 @@ def setup_logger(log_file="app.log"):
 
 def mask_email(email: str) -> str:
     """Ofusca un correo electrónico (ej. juan.perez@gmail.com -> j***z@gmail.com)."""
-    if not email or "@" not in email:
+    if not email:
         return email
-    
+
+    # Entradas sin '@' (formatos inválidos tecleados por el usuario) también se
+    # ofuscan: devolverlas intactas filtraría el texto original a logs/UI.
+    if "@" not in email:
+        if len(email) <= 2:
+            return email[:1] + "***"
+        return email[0] + "***" + email[-1]
+
     parts = email.split("@")
     name = parts[0]
     domain = parts[1]
@@ -82,6 +89,24 @@ def mask_email(email: str) -> str:
         masked_name = name[0] + "***" + name[-1]
         
     return f"{masked_name}@{domain}"
+
+def mask_filename(filename: str) -> str:
+    """Ofusca un nombre de archivo para logs persistentes conservando la extensión.
+
+    Los nombres de PDF suelen contener nombres de pacientes (ej. juan_perez_123.pdf);
+    el PIIFilter redacta los dígitos pero no los nombres. Ej.: juan_perez_123.pdf -> ju***23.pdf
+    """
+    if not filename:
+        return filename
+    base = os.path.basename(str(filename))
+    stem, dot, ext = base.rpartition(".")
+    if not dot:
+        stem, ext = base, ""
+    if len(stem) <= 4:
+        masked = stem[:1] + "***"
+    else:
+        masked = stem[:2] + "***" + stem[-2:]
+    return f"{masked}.{ext}" if ext else masked
 
 # Instancia global del logger
 log_dir = os.path.join(os.environ.get("APPDATA", os.getcwd()), "SEMS_Pro")

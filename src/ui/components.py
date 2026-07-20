@@ -86,6 +86,8 @@ class StatusBadge(ctk.CTkLabel):
         """Crea el badge estándar de un envío según su campo 'estado'."""
         if estado == "exito":
             return cls(master, "✓ Exitoso", kind="success")
+        if estado == "recuperado":
+            return cls(master, "↻ Recuperado", kind="info")
         return cls(master, "✕ Fallido", kind="danger")
 
 

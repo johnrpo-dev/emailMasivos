@@ -4,6 +4,8 @@ __pycache__/
 dist/
 build/
 *.spec
+# El spec de build del proyecto SÍ se versiona (reproducibilidad del ejecutable)
+!Envio_Masivo_Seguro.spec
 **/config.json
 data/output/
 .env

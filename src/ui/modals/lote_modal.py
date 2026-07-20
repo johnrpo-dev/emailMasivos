@@ -50,19 +50,31 @@ class LoteModal(ctk.CTkToplevel):
         raw_email_corrections = lote_data.get("raw_email_corrections", {})
         raw_pdf_corrections = lote_data.get("raw_pdf_corrections", {})
 
+        # Candado de concurrencia: con un envío en curso los reintentos se
+        # bloquean para no despachar el mismo registro dos veces en paralelo.
+        workflow_busy = getattr(parent, "workflow_controller", None) is not None \
+            and parent.workflow_controller.is_busy()
+        btn_state = "disabled" if workflow_busy else "normal"
+
         if raw_records:
             if raw_email_corrections or raw_pdf_corrections:
                 btn_correct = PrimaryButton(
                     btn_frame, text="Corregir y Reintentar", width=180, height=42,
-                    command=self.handle_correct_and_retry
+                    state=btn_state, command=self.handle_correct_and_retry
                 )
                 btn_correct.pack(side="left", padx=5, expand=True)
 
             btn_retry = WarningButton(
                 btn_frame, text="Reintentar Fallidos",
-                width=160, height=42, command=self.handle_retry
+                width=160, height=42, state=btn_state, command=self.handle_retry
             )
             btn_retry.pack(side="right", padx=5, expand=True)
+
+            if workflow_busy:
+                ctk.CTkLabel(
+                    self, text="Hay un envío en curso: los reintentos se habilitarán al terminar.",
+                    font=theme.font("caption"), text_color=theme.TEXT_MUTED
+                ).pack(side="bottom", pady=(0, 4))
 
         # Scrollable Frame con los envíos del lote
         envios_scroll = ctk.CTkScrollableFrame(
