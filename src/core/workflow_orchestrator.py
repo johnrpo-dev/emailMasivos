@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 import smtplib
 import tempfile
 import time
@@ -545,12 +546,20 @@ class WorkflowOrchestrator:
             # Borrado seguro síncrono del archivo PDF temporal
             if os.path.exists(temp_pdf):
                 PDFCrypto.secure_cleanup(temp_pdf)
-            # Limpieza del directorio temporal contenedor vacío
-            if os.path.exists(temp_dir):
+            # SEGURIDAD: os.rmdir() falla si quedó cualquier residuo dentro (p. ej. si
+            # el borrado seguro no pudo eliminar el PDF cifrado). Antes eso dejaba el
+            # documento del paciente en %TEMP% hasta el cierre de la app. Se barre el
+            # contenido con borrado seguro y rmtree queda como red de seguridad.
+            if os.path.isdir(temp_dir):
                 try:
+                    for residuo in os.listdir(temp_dir):
+                        ruta_residuo = os.path.join(temp_dir, residuo)
+                        if os.path.isfile(ruta_residuo):
+                            PDFCrypto.secure_cleanup(ruta_residuo)
                     os.rmdir(temp_dir)
                 except Exception as ex:
-                    logger.warning(f"No se pudo eliminar directorio temporal {temp_dir}: {str(ex)}")
+                    logger.warning(f"Residuos en el temporal {os.path.basename(temp_dir)}; forzando eliminación: {str(ex)}")
+                    shutil.rmtree(temp_dir, ignore_errors=True)
             # Nota (M-01): el throttling ahora es global y se aplica ANTES del envío
             # (_global_throttle_wait); el sleep por worker duplicaba la tasa configurada.
         
