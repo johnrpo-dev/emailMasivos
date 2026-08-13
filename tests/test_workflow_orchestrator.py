@@ -142,8 +142,10 @@ class TestWorkflowOrchestrator(unittest.TestCase):
                 self.assertIn("sospechosa", self.batch_record["envios"][0]["detalles"])
 
     @patch('src.core.workflow_orchestrator.EmailService')
-    def test_fuzzy_pdf_matching(self, mock_email_service_class):
-        """Verifica que si un archivo PDF no existe, se busque uno similar en disco y se sugiera."""
+    def test_pdf_no_encontrado_no_filtra_directorio(self, mock_email_service_class):
+        """SEC: cuando el PDF no existe, el error debe nombrar únicamente el archivo
+        solicitado en el CSV, sin listar ni sugerir archivos reales del directorio
+        (evita la enumeración del contenido del directorio desde la interfaz)."""
         mock_service = MagicMock()
         mock_email_service_class.return_value = mock_service
 
@@ -155,9 +157,9 @@ class TestWorkflowOrchestrator(unittest.TestCase):
             "cedula": "123456"
         }
 
-        # Mockear os.listdir para simular que en el disco existe factura-123.pdf
+        # En disco existen otros archivos que NO deben revelarse al operador
         mock_files = ["factura-123.pdf", "factura_456.pdf"]
-        
+
         pdf_corrections = {}
 
         with patch('os.path.isdir', return_value=True):
@@ -184,12 +186,18 @@ class TestWorkflowOrchestrator(unittest.TestCase):
                         pdf_corrections=pdf_corrections
                     )
 
-        # Comprobar que se sugirió el archivo similar en el mensaje de error
         self.assertEqual(len(self.errores), 1)
-        self.assertIn("Sugerencia: factura-123.pdf", self.errores[0])
-        # La sugerencia NO debe auto-aplicarse a pdf_corrections (riesgo de privacidad NEW-001)
+        # El mensaje nombra el archivo pedido en el CSV
+        self.assertIn("Archivo [factura_123.pdf], no encontrado", self.errores[0])
+        # Y NO revela ningún archivo real del directorio
+        self.assertNotIn("factura-123.pdf", self.errores[0])
+        self.assertNotIn("factura_456.pdf", self.errores[0])
+        self.assertNotIn("Sugerencia", self.errores[0])
+        # No se auto-aplican correcciones de PDF
         self.assertEqual(len(pdf_corrections), 0)
         self.assertEqual(len(self.records_fallidos), 1)
+        # El registro queda marcado como error
+        self.assertEqual(self.batch_record["envios"][0]["estado"], "error")
 
     def test_email_corrections_keyed_by_real_email(self):
         """C-01: las correcciones se indexan por email REAL. Dos correos distintos cuya

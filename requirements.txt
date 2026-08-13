@@ -3,3 +3,8 @@ pikepdf==10.5.1
 customtkinter==5.2.2
 keyring==25.7.0
 cryptography>=42.0.0
+
+# Backend nativo de keyring en Windows (Credential Manager).
+# Es dependencia transitiva de keyring, pero se declara de forma explícita para
+# garantizar que PyInstaller la incluya en el empaquetado del ejecutable.
+pywin32-ctypes>=0.2.2; sys_platform == 'win32'

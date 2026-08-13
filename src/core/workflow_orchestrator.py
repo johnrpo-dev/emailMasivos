@@ -1,7 +1,7 @@
 import os
 import re
-import shutil
 import smtplib
+import shutil
 import tempfile
 import time
 import threading
@@ -462,14 +462,12 @@ class WorkflowOrchestrator:
 
         # Verificar si el archivo PDF existe físicamente
         if not os.path.exists(input_pdf):
-            similar_pdf = self._find_similar_pdf(pdf_dir, os.path.basename(id_archivo.replace('\\', '/')))
-            
             with lock:
-                if similar_pdf:
-                    err_msg = f"PDF no encontrado ({id_archivo_sanitized}) (Sugerencia: {similar_pdf})"
-                else:
-                    err_msg = f"PDF no encontrado ({id_archivo_sanitized})"
-                    
+                # SEC: se reporta únicamente el nombre suministrado por el operador en el
+                # CSV (ya saneado). No se listan ni se sugieren archivos del directorio,
+                # para evitar la enumeración de su contenido desde la interfaz.
+                err_msg = f"Archivo [{id_archivo_sanitized}], no encontrado"
+
                 logger.error(f"Falta el archivo PDF: {mask_filename(input_pdf)} (Destino: {mask_email(email)})")
                 errores.append(f"{mask_email(email)}: {err_msg}")
                 records_fallidos.append(record)
@@ -478,10 +476,7 @@ class WorkflowOrchestrator:
                 if on_stats_update:
                     on_stats_update(failed=failed_count[0])
                 if on_log:
-                    if similar_pdf:
-                        on_log(f"✗ ERROR: PDF no encontrado para {mask_email(email)} (Sugerencia: {similar_pdf})")
-                    else:
-                        on_log(f"✗ ERROR: PDF no encontrado para {mask_email(email)}")
+                    on_log(f"✗ ERROR: {err_msg} para {mask_email(email)}")
                 count = completed_count[0]
                 progress = count / total_validos
                 if on_progress:
@@ -543,23 +538,38 @@ class WorkflowOrchestrator:
                     "error", err_msg
                 )
         finally:
+            # SEC-02: liberación explícita de la clave de cifrado en memoria.
+            # CPython no permite sobreescribir strings inmutables in-place, pero
+            # eliminar la referencia reduce la ventana de exposición y permite que
+            # el recolector libere el objeto de inmediato en lugar de mantenerlo
+            # vivo hasta el final del alcance de la función.
+            try:
+                pdf_password = None
+                del pdf_password
+            except NameError:
+                pass
             # Borrado seguro síncrono del archivo PDF temporal
             if os.path.exists(temp_pdf):
                 PDFCrypto.secure_cleanup(temp_pdf)
-            # SEGURIDAD: os.rmdir() falla si quedó cualquier residuo dentro (p. ej. si
-            # el borrado seguro no pudo eliminar el PDF cifrado). Antes eso dejaba el
-            # documento del paciente en %TEMP% hasta el cierre de la app. Se barre el
-            # contenido con borrado seguro y rmtree queda como red de seguridad.
-            if os.path.isdir(temp_dir):
+            # Limpieza del directorio temporal contenedor.
+            # SEC: se barre cualquier residuo con borrado seguro antes de eliminar el
+            # directorio, y se usa rmtree como red de seguridad para que ningún PDF
+            # descifrado sobreviva si secure_cleanup falló.
+            if os.path.exists(temp_dir):
                 try:
                     for residuo in os.listdir(temp_dir):
-                        ruta_residuo = os.path.join(temp_dir, residuo)
-                        if os.path.isfile(ruta_residuo):
-                            PDFCrypto.secure_cleanup(ruta_residuo)
-                    os.rmdir(temp_dir)
+                        ruta = os.path.join(temp_dir, residuo)
+                        if os.path.isfile(ruta):
+                            PDFCrypto.secure_cleanup(ruta)
                 except Exception as ex:
-                    logger.warning(f"Residuos en el temporal {os.path.basename(temp_dir)}; forzando eliminación: {str(ex)}")
+                    logger.warning(f"No se pudieron sanear residuos temporales: {str(ex)}")
+                try:
                     shutil.rmtree(temp_dir, ignore_errors=True)
+                except Exception as ex:
+                    logger.error(
+                        f"FALLO CRITICO: directorio temporal persistente "
+                        f"{os.path.basename(temp_dir)}: {str(ex)}"
+                    )
             # Nota (M-01): el throttling ahora es global y se aplica ANTES del envío
             # (_global_throttle_wait); el sleep por worker duplicaba la tasa configurada.
         
@@ -640,61 +650,3 @@ class WorkflowOrchestrator:
                 hmac_key, "exito", None
             )
 
-    def _find_similar_pdf(self, pdf_dir: str, target_filename: str) -> str:
-        """Busca en el directorio de PDFs si existe algún archivo similar al buscado.
-        
-        Soporta:
-        1. Coincidencia exacta de nombre original (por si la sanitización lo cambió).
-        2. Coincidencia sin distinguir mayúsculas/minúsculas (case-insensitive).
-        3. Archivos sin extensión en el CSV pero con extensión en disco.
-        4. Coincidencia por similitud de caracteres (Levenshtein/SequenceMatcher).
-        """
-        if not pdf_dir or not os.path.isdir(pdf_dir):
-            return None
-            
-        try:
-            files = os.listdir(pdf_dir)
-        except Exception:
-            return None
-            
-        pdf_files = [f for f in files if f.lower().endswith('.pdf')]
-        if not pdf_files:
-            return None
-            
-        # 1. Coincidencia exacta o case-insensitive
-        target_clean = target_filename.replace('\\', '/').split('/')[-1]
-        for f in files:
-            if f.lower() == target_clean.lower():
-                return f
-                
-        # 2. Si no tiene extensión .pdf, probar añadiéndola
-        target_name = target_clean
-        if not target_name.lower().endswith('.pdf'):
-            target_name_with_ext = target_name + ".pdf"
-            for f in pdf_files:
-                if f.lower() == target_name_with_ext.lower():
-                    return f
-                    
-        # 3. Comparación por similitud de caracteres (SequenceMatcher)
-        import difflib
-        best_match = None
-        best_ratio = 0.0
-        
-        target_name_lower = target_name.lower()
-        if target_name_lower.endswith('.pdf'):
-            target_base = target_name_lower[:-4]
-        else:
-            target_base = target_name_lower
-            
-        for f in pdf_files:
-            f_base = f[:-4].lower()
-            ratio = difflib.SequenceMatcher(None, target_base, f_base).ratio()
-            if ratio > best_ratio:
-                best_ratio = ratio
-                best_match = f
-                
-        # Umbral del 75% de similitud para considerarlo una sugerencia válida
-        if best_ratio >= 0.75:
-            return best_match
-            
-        return None
