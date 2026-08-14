@@ -10,9 +10,12 @@ class LicenseManager:
     # SEGURIDAD: Esta llave pública debe corresponder al par Ed25519 almacenado en
     # %APPDATA%/SEMS_Pro/keys/. Si rota las llaves (ejecutando generar_licencia.py),
     # actualice este valor con el nuevo hex que se muestra en la consola del generador.
-    # IMPORTANTE: El par de llaves anterior fue ROTADO por exposición accidental.
-    # Las licencias emitidas con el par anterior ya NO serán válidas tras esta actualización.
-    PUBLIC_KEY_HEX = "4a20327707072ab45f34c2029a62848a441910ffd076de2f5812c49bb5c0c988"
+    #
+    # ROTACIÓN 2026-08-14: se perdió la passphrase del par anterior
+    # (4a203277...b5c0c988), que quedó inutilizable para firmar. Las licencias
+    # emitidas con aquel par ya NO validan; deben reemplazarse por licencias
+    # firmadas con el par vigente.
+    PUBLIC_KEY_HEX = "90b59b8d0d2a72563e02ef11c4fbb4a2415cf5c0beccf67b3ff2a37de8727689"
 
     # Periodo de gracia tras el vencimiento (días). Evita bloquear en seco a un
     # cliente al día por un retraso administrativo en la renovación mensual.
