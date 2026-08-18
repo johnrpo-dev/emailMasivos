@@ -5,8 +5,8 @@
 # Mantener FileVersion/ProductVersion sincronizados con MyAppVersion de installer.iss.
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 0, 2, 0),
-    prodvers=(1, 0, 2, 0),
+    filevers=(1, 1, 0, 0),
+    prodvers=(1, 1, 0, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -21,12 +21,12 @@ VSVersionInfo(
         [
           StringStruct('CompanyName', 'SEMS Pro'),
           StringStruct('FileDescription', 'SEMS Pro — Sistema de Envíos Masivos Seguros'),
-          StringStruct('FileVersion', '1.0.2.0'),
+          StringStruct('FileVersion', '1.1.0.0'),
           StringStruct('InternalName', 'Envio_Masivo_Seguro'),
           StringStruct('LegalCopyright', '© 2026 SEMS Pro. Todos los derechos reservados.'),
           StringStruct('OriginalFilename', 'Envio_Masivo_Seguro.exe'),
           StringStruct('ProductName', 'SEMS Pro'),
-          StringStruct('ProductVersion', '1.0.2.0')
+          StringStruct('ProductVersion', '1.1.0.0')
         ]
       )
     ]),
