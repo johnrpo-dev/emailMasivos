@@ -4,65 +4,23 @@ Punto de partida: **v1.1.0** entregada, contrato firmado el 6 de agosto de 2026 
 Cardio VID, modalidad *Licencia + Soporte Mensual*.
 
 Este plan está alineado con las obligaciones reales del contrato, no con una lista de deseos.
-Antes de las mejoras hay **tres desajustes entre el contrato y el software** que deben cerrarse.
 
 ---
 
-## Bloque 0 — Desajustes contrato ↔ software (atender primero)
+## Bloque 0 — Obligación pendiente del contrato
 
-### 0.1 — "Revocar la clave de activación" no existe técnicamente · URGENTE
-
-El contrato faculta al proveedor a **revocar la clave** si el cliente no paga al octavo día
-(cláusula Décima Primera, parágrafo) o si el soporte termina por causas imputables al cliente
-(Décima Segunda, cuarto).
-
-El software **no tiene revocación**: la licencia es un token firmado con fecha de vencimiento, sin
-verificación en línea ni interruptor remoto. Una vez activada, funciona hasta que expire.
-
-**Consecuencia inmediata:** si durante el período de prueba se entrega la licencia mensual
-completa (vence el 14 de septiembre) y el cliente no paga al octavo día, seguirá operando el
-software un mes entero sin poder impedirlo.
-
-> **Acción antes de instalar:** emitir una licencia corta de **10 días** para el período de prueba.
-> La mensualidad completa se entrega solo cuando el pago esté confirmado. El generador ya permite
-> emitir por días (opción 2).
-
-**Único mecanismo real de corte:** no emitir la siguiente mensualidad. El efecto es diferido hasta
-el vencimiento vigente más 7 días de gracia; conviene tenerlo presente al calcular plazos.
-
-### 0.2 — Licencia de un (1) equipo, sin forma de hacerla cumplir
-
-La cláusula Segunda limita el uso a **un equipo designado** y excluye expresamente la instalación
-en equipos adicionales "sin la contratación del servicio correspondiente".
-
-El software no tiene vínculo con el hardware: la misma clave activa cuantos equipos se quiera y
-**no hay manera de detectarlo**. Es una fuga de ingresos, no un problema de seguridad.
-
-Tres salidas posibles, en orden de esfuerzo:
-
-1. **Aceptarlo y controlarlo comercialmente.** Preguntar periódicamente cuántos puestos hay en uso
-   y facturar los adicionales. Cero desarrollo, depende de la buena fe.
-2. **Marca visible por instalación.** Mostrar en la interfaz el equipo y usuario activados, de modo
-   que una auditoría o una captura de pantalla evidencie el puesto. Bajo esfuerzo, efecto disuasivo.
-3. **Atar la licencia al equipo.** Incluir una huella del computador en el token firmado. Es lo
-   único que lo impide de verdad, pero convierte cada cambio de disco o formateo en una solicitud
-   de reemisión.
-
-> **Decisión pendiente.** Si el modelo es cobrar por puesto, la opción 3 es coherente con el
-> contrato; si el precio es por institución, conviene modificar la cláusula en la próxima prórroga
-> en vez de desarrollar.
-
-### 0.3 — La licencia perpetua del mes 6 necesita una clave que no expire
+### Licencia perpetua del mes 6
 
 Cumplido el primer semestre de soporte y estando el cliente a paz y salvo, la licencia se vuelve
-**perpetua e irrevocable** (Décima Segunda, segundo). Pero el software exige una clave con
+**perpetua e irrevocable** (cláusula Décima Segunda, segundo). Pero el software exige una clave con
 vencimiento: si se dejan de emitir mensualidades, deja de funcionar y se incumpliría ese derecho.
 
-> **Acción:** al consolidar, emitir una **licencia perpetua** (el generador ya tiene esa opción,
-> con vencimiento simbólico en 2099). Agendarlo a seis meses de la FECHA DE INICIO, que es el día
-> en que el cliente pague la licencia.
+> **Acción:** al consolidar, emitir una **licencia perpetua** (el generador ya tiene esa opción, con
+> vencimiento simbólico en 2099). Agendarlo a seis meses de la FECHA DE INICIO, que es el día en que
+> el cliente pagó la licencia.
 
----
+Es la única obligación contractual que hoy el software no puede cumplir sin una acción manual
+programada con antelación.
 
 ## Qué obliga y qué no obliga el contrato
 
@@ -110,7 +68,7 @@ Cada ítem elimina una categoría de consultas que hay obligación de atender en
 
 | # | Tarea | Esfuerzo | Por qué |
 | :-- | :-- | :-- | :-- |
-| 3.1 | **Preparar la consolidación del mes 6**: emitir y probar la licencia perpetua antes de que llegue la fecha. | 2 h | Obligación contractual (ver 0.3). Si falla ese día, el cliente queda sin servicio teniendo derecho perpetuo. |
+| 3.1 | **Preparar la consolidación del mes 6**: emitir y probar la licencia perpetua antes de que llegue la fecha. | 2 h | Obligación contractual (ver Bloque 0). Si falla ese día, el cliente queda sin servicio teniendo derecho perpetuo. |
 | 3.2 | **Documento de conformidad de seguridad** que mapee los controles del software a OWASP Top 10 2021, NIST SP 800-53 y NIST SP 800-88. | 1 día | La cláusula Octava declara que el software fue auditado bajo esos estándares. Si el área de seguridad de la clínica pide evidencia, hoy no existe el documento que la sustente. |
 | 3.3 | **Firma digital del instalador (code signing).** | 1 día + costo del certificado | Elimina alertas de antivirus y SmartScreen. Hoy la guía de TI pide agregar una exclusión de antivirus, algo que muchas áreas de seguridad institucionales no aceptan. |
 | 3.4 | **Funciones de valor** (varios adjuntos en un correo, plantillas por tipo de servicio). | 4–5 días | No obligatorias por contrato: cotizar como desarrollo aparte o usarlas como argumento de renovación del semestre. |
@@ -121,8 +79,7 @@ Cada ítem elimina una categoría de consultas que hay obligación de atender en
 
 | Momento | Qué ocurre | Acción |
 | :-- | :-- | :-- |
-| Instalación | Arranca el período de prueba de 7 días | Entregar licencia corta de 10 días, no la mensual |
-| Día 6 a 8 tras instalar | Se paga la licencia; ese día es la **FECHA DE INICIO** | Registrar la fecha; entregar la mensualidad completa |
+| Pago de la licencia | Ese día es la **FECHA DE INICIO** | Registrarlo: de ahí se cuentan los seis meses |
 | Mismo día de cada mes | Se causa la mensualidad de soporte | Emitir la licencia del mes contra pago confirmado |
 | Mes 6 desde FECHA DE INICIO | La licencia se consolida como perpetua | Emitir licencia perpetua (tarea 3.1) |
 | Mes 6, 30 días antes | Vence el período semestral | Decidir prórroga o renegociación de cláusulas |
@@ -157,7 +114,6 @@ Cada ítem elimina una categoría de consultas que hay obligación de atender en
 | Riesgo | Mitigación |
 | :-- | :-- |
 | Pérdida de la passphrase o del par de llaves | Tareas 1.1 y 1.2, primera semana |
-| El cliente usa el software en varios equipos sin contratarlos | Decisión del punto 0.2 |
 | Llegar el mes 6 sin licencia perpetua lista | Tarea 3.1, agendada con antelación |
 | Incumplir el SLA de 24 horas hábiles por falta de registro | Tarea 1.3 |
 | Que pidan evidencia de la auditoría declarada | Tarea 3.2 |
