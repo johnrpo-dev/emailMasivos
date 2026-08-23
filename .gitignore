@@ -20,6 +20,8 @@ scratch_*.txt
 # Scripts privados administrativos del proveedor (SEC-LIC)
 generar_licencia.py
 reset_licencia.py
+rotar_y_generar.py
+emitir_lote.py
 
 # Directorio temporal aislado
 data/temp/
