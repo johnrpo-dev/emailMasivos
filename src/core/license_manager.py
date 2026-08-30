@@ -7,15 +7,29 @@ from src.utils.logger import logger
 
 class LicenseManager:
     SERVICE_NAME = "SEMS_Pro_Licensing"
-    # SEGURIDAD: Esta llave pública debe corresponder al par Ed25519 almacenado en
-    # %APPDATA%/SEMS_Pro/keys/. Si rota las llaves (ejecutando generar_licencia.py),
-    # actualice este valor con el nuevo hex que se muestra en la consola del generador.
+    # SEGURIDAD: llaves públicas Ed25519 en las que confía la aplicación.
     #
-    # ROTACIÓN 2026-08-14: se perdió la passphrase del par anterior
-    # (4a203277...b5c0c988), que quedó inutilizable para firmar. Las licencias
-    # emitidas con aquel par ya NO validan; deben reemplazarse por licencias
-    # firmadas con el par vigente.
-    PUBLIC_KEY_HEX = "90b59b8d0d2a72563e02ef11c4fbb4a2415cf5c0beccf67b3ff2a37de8727689"
+    # La PRIMERA es la activa: con ella se firman las licencias nuevas y contra
+    # ella verifica el emisor. Las siguientes son llaves retiradas que se
+    # conservan para no invalidar licencias ya entregadas y todavía vigentes.
+    #
+    # Al rotar: ponga la nueva al principio y conserve la anterior mientras haya
+    # licencias suyas en circulación. Asi una rotacion deja de obligar a
+    # reinstalar y reactivar en los equipos del cliente.
+    #
+    # Historial:
+    #   4a203277...b5c0c988 - retirada 2026-08-14 (passphrase perdida). Sin
+    #       licencias vigentes en circulacion: se elimino de la lista.
+    #   90b59b8d...e8727689 - retirada 2026-08-22 (passphrase perdida). Se
+    #       conserva porque el cliente opera con una licencia suya hasta el
+    #       14/09/2026; puede retirarse despues de esa fecha.
+    PUBLIC_KEYS_HEX = [
+        "PENDIENTE_NUEVA_LLAVE",
+        "90b59b8d0d2a72563e02ef11c4fbb4a2415cf5c0beccf67b3ff2a37de8727689",
+    ]
+
+    # Llave activa de firma (la que debe usar el emisor de licencias).
+    PUBLIC_KEY_HEX = PUBLIC_KEYS_HEX[0]
 
     # Periodo de gracia tras el vencimiento (días). Evita bloquear en seco a un
     # cliente al día por un retraso administrativo en la renovación mensual.
@@ -36,10 +50,6 @@ class LicenseManager:
     def verify_signature(license_base64: str) -> dict:
         """Valida la firma Ed25519 y retorna el payload si es correcto."""
         try:
-            public_key = ed25519.Ed25519PublicKey.from_public_bytes(
-                bytes.fromhex(LicenseManager.PUBLIC_KEY_HEX)
-            )
-            
             # Asegurar que el relleno Base64 sea correcto ante posibles pérdidas en copiar/pegar
             missing_padding = len(license_base64) % 4
             if missing_padding:
@@ -55,9 +65,18 @@ class LicenseManager:
             # Serializar de la misma forma que en el generador (sort_keys=True)
             json_payload = json.dumps(payload, sort_keys=True)
             
-            # Verificar firma criptográfica
-            public_key.verify(firma, json_payload.encode('utf-8'))
-            return payload
+            # Verificar contra cada llave confiable: basta que una valide.
+            # Permite que convivan licencias firmadas antes y despues de una rotacion.
+            for hex_llave in LicenseManager.PUBLIC_KEYS_HEX:
+                if hex_llave.startswith("PENDIENTE"):
+                    continue
+                try:
+                    llave = ed25519.Ed25519PublicKey.from_public_bytes(bytes.fromhex(hex_llave))
+                    llave.verify(firma, json_payload.encode('utf-8'))
+                    return payload
+                except Exception:
+                    continue
+            raise ValueError("la firma no corresponde a ninguna llave confiable")
         except Exception as e:
             logger.error(f"Fallo en verificación criptográfica de la licencia: {str(e)}")
             return None
