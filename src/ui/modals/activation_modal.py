@@ -144,7 +144,11 @@ class ActivationModal(ctk.CTk):
             success = LicenseManager.save_license(license_key, payload)
             if success:
                 self._hide_validation_bar()
-                dialogs.show_success(self, "Activación Exitosa", f"¡Software activado correctamente!\n\nPropietario: {payload.get('email')}\nVence el: {expires[:10]}")
+                if LicenseManager.es_perpetua(LicenseManager._parse_iso_datetime(payload["expires"])):
+                    vigencia = "Licencia perpetua (no vence)"
+                else:
+                    vigencia = f"Vence el: {expires[:10]}"
+                dialogs.show_success(self, "Activación Exitosa", f"¡Software activado correctamente!\n\nPropietario: {payload.get('email')}\n{vigencia}")
                 self.activated = True
                 self.destroy()
             else:

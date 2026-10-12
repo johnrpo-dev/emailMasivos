@@ -2,6 +2,7 @@ import keyring
 import json
 import base64
 from datetime import datetime, timedelta, timezone
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from src.utils.logger import logger
 
@@ -20,20 +21,40 @@ class LicenseManager:
     # Historial:
     #   4a203277...b5c0c988 - retirada 2026-08-14 (passphrase perdida). Sin
     #       licencias vigentes en circulacion: se elimino de la lista.
-    #   90b59b8d...e8727689 - retirada 2026-08-22 (passphrase perdida). Se
-    #       conserva porque el cliente opera con una licencia suya hasta el
-    #       14/09/2026; puede retirarse despues de esa fecha.
+    #   90b59b8d...e8727689 - retirada 2026-08-22 (passphrase perdida). Firma la
+    #       licencia 2 del cliente (vence 14/10/2026, gracia hasta el 21/10).
+    #       Puede retirarse en una version posterior a esa fecha.
+    #   8c0c1d15...d5efaf81 - ACTIVA desde 2026-10. Firma las licencias 3 a 6 y
+    #       la PERPETUA del cliente: NUNCA retirarla de esta lista, o la
+    #       licencia perpetua dejaria de validar al actualizar la aplicacion.
+    #
+    # Cada entrada debe ser el hex de una llave Ed25519 de 32 bytes (64 chars).
+    # tests/test_license_multikey.py falla si alguna no lo es: un marcador como
+    # "PENDIENTE_NUEVA_LLAVE" bloquea el release hasta pegar la llave real.
     PUBLIC_KEYS_HEX = [
-        "PENDIENTE_NUEVA_LLAVE",
+        "8c0c1d15a3c6bd661e971ec2017c8b6f0f35ef87a76f1bd7ba0eec76d5efaf81",
         "90b59b8d0d2a72563e02ef11c4fbb4a2415cf5c0beccf67b3ff2a37de8727689",
     ]
 
-    # Llave activa de firma (la que debe usar el emisor de licencias).
+    # Alias de solo lectura de la llave activa (PUBLIC_KEYS_HEX[0]), usado por
+    # los scripts emisores. Al rotar NO se edita aqui: se edita la lista.
     PUBLIC_KEY_HEX = PUBLIC_KEYS_HEX[0]
 
     # Periodo de gracia tras el vencimiento (días). Evita bloquear en seco a un
     # cliente al día por un retraso administrativo en la renovación mensual.
     GRACE_DAYS = 7
+
+    # Licencia perpetua (consolidación del mes 6, cláusula Décima Segunda): se
+    # emite con vencimiento simbólico 31/12/2099. Desde ese año se considera que
+    # no vence, y además no se le aplica la detección de retroceso de reloj: ese
+    # chequeo solo evita estirar un vencimiento real, y en una perpetua bloquearía
+    # al cliente por un desajuste de hora sin proteger nada.
+    PERPETUA_DESDE_ANIO = 2099
+
+    @staticmethod
+    def es_perpetua(exp_date: datetime) -> bool:
+        """True si el vencimiento corresponde a una licencia perpetua."""
+        return exp_date.year >= LicenseManager.PERPETUA_DESDE_ANIO
 
     @staticmethod
     def _parse_iso_datetime(iso_str: str) -> datetime:
@@ -45,6 +66,17 @@ class LicenseManager:
         else:
             dt = dt.astimezone(timezone.utc)
         return dt
+
+    @staticmethod
+    def parse_public_key(hex_llave: str) -> ed25519.Ed25519PublicKey:
+        """Convierte el hex de una llave pública Ed25519. Lanza ValueError si está mal formada."""
+        try:
+            crudo = bytes.fromhex(hex_llave)
+        except ValueError:
+            raise ValueError("no es hexadecimal valido") from None
+        if len(crudo) != 32:
+            raise ValueError(f"mide {len(crudo)} bytes, se esperaban 32")
+        return ed25519.Ed25519PublicKey.from_public_bytes(crudo)
 
     @staticmethod
     def verify_signature(license_base64: str) -> dict:
@@ -67,14 +99,17 @@ class LicenseManager:
             
             # Verificar contra cada llave confiable: basta que una valide.
             # Permite que convivan licencias firmadas antes y despues de una rotacion.
-            for hex_llave in LicenseManager.PUBLIC_KEYS_HEX:
-                if hex_llave.startswith("PENDIENTE"):
+            for posicion, hex_llave in enumerate(LicenseManager.PUBLIC_KEYS_HEX):
+                try:
+                    llave = LicenseManager.parse_public_key(hex_llave)
+                except ValueError as e:
+                    # Una llave mal pegada no debe pasar por "firma no corresponde".
+                    logger.error(f"Llave pública confiable #{posicion} mal formada ({e}); se omite.")
                     continue
                 try:
-                    llave = ed25519.Ed25519PublicKey.from_public_bytes(bytes.fromhex(hex_llave))
                     llave.verify(firma, json_payload.encode('utf-8'))
                     return payload
-                except Exception:
+                except InvalidSignature:
                     continue
             raise ValueError("la firma no corresponde a ninguna llave confiable")
         except Exception as e:
@@ -106,6 +141,9 @@ class LicenseManager:
 
             now = datetime.now(timezone.utc)
             exp_date = LicenseManager._parse_iso_datetime(exp_date_str)
+
+            if LicenseManager.es_perpetua(exp_date):
+                return "active"
 
             # 1. ¿Reloj de Windows alterado hacia el pasado? (Tolerancia de 2 horas)
             if last_run_str:

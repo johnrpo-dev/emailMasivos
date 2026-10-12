@@ -12,6 +12,7 @@ import json
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
 from src.core.license_manager import LicenseManager
+from src.utils.logger import logger
 
 
 def _hex_publica(priv):
@@ -59,11 +60,13 @@ class TestVariasLlavesConfiables(unittest.TestCase):
                           [_hex_publica(self.llave_nueva)]):
             self.assertIsNone(LicenseManager.verify_signature(_firmar(self.llave_vieja)))
 
-    def test_ignora_marcadores_pendientes(self):
-        """Un marcador de llave sin definir no debe romper la verificacion."""
+    def test_llave_mal_formada_se_registra_y_no_bloquea_las_demas(self):
+        """Una llave mal pegada se reporta en el log en vez de pasar por firma invalida."""
         with patch.object(LicenseManager, "PUBLIC_KEYS_HEX",
-                          ["PENDIENTE_NUEVA_LLAVE", _hex_publica(self.llave_vieja)]):
-            self.assertIsNotNone(LicenseManager.verify_signature(_firmar(self.llave_vieja)))
+                          [_hex_publica(self.llave_nueva)[:-2], _hex_publica(self.llave_vieja)]):
+            with self.assertLogs(logger, level="ERROR") as registro:
+                self.assertIsNotNone(LicenseManager.verify_signature(_firmar(self.llave_vieja)))
+        self.assertTrue(any("mal formada" in linea for linea in registro.output))
 
     def test_payload_alterado_no_valida(self):
         with patch.object(LicenseManager, "PUBLIC_KEYS_HEX",
@@ -73,6 +76,22 @@ class TestVariasLlavesConfiables(unittest.TestCase):
             datos["payload"]["expires"] = "2099-12-31T23:59:59+00:00"
             alterado = base64.b64encode(json.dumps(datos).encode()).decode()
             self.assertIsNone(LicenseManager.verify_signature(alterado))
+
+
+class TestLlavesDeLaAplicacion(unittest.TestCase):
+    """Compuerta de release: valida la lista REAL, sin parches."""
+
+    def test_todas_las_llaves_confiables_son_ed25519_validas(self):
+        self.assertTrue(LicenseManager.PUBLIC_KEYS_HEX, "la lista de llaves confiables esta vacia")
+        for posicion, hex_llave in enumerate(LicenseManager.PUBLIC_KEYS_HEX):
+            with self.subTest(posicion=posicion):
+                try:
+                    LicenseManager.parse_public_key(hex_llave)
+                except ValueError as e:
+                    self.fail(f"PUBLIC_KEYS_HEX[{posicion}] no es una llave Ed25519 valida: {e}")
+
+    def test_la_llave_activa_es_la_primera_de_la_lista(self):
+        self.assertEqual(LicenseManager.PUBLIC_KEY_HEX, LicenseManager.PUBLIC_KEYS_HEX[0])
 
 
 if __name__ == "__main__":

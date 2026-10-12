@@ -85,7 +85,7 @@ src/
    ```bash
    python generar_licencia.py
    ```
-   *Si rotas las llaves, actualiza `PUBLIC_KEY_HEX` en `src/core/license_manager.py`.*
+   *Si rotas las llaves, pon la llave nueva como primer elemento de `PUBLIC_KEYS_HEX` en `src/core/license_manager.py` (conserva debajo la anterior mientras tenga licencias vigentes).*
 
 2. **Restablecer la licencia local** (pruebas/soporte):
    ```bash

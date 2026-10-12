@@ -18,7 +18,7 @@ iscc installer.iss                       # generar instalador Inno Setup (tras P
 ```
 
 Scripts de licenciamiento (solo desarrollador):
-- `python generar_licencia.py` — genera una licencia Base64 firmada (las llaves Ed25519 viven fuera del repo en `%APPDATA%/SEMS_Pro/keys/`; si se rotan las llaves, actualizar `PUBLIC_KEY_HEX` en `src/core/license_manager.py`)
+- `python generar_licencia.py` — genera una licencia Base64 firmada (las llaves Ed25519 viven fuera del repo en `%APPDATA%/SEMS_Pro/keys/`; si se rotan las llaves, poner la llave nueva como primer elemento de `PUBLIC_KEYS_HEX` en `src/core/license_manager.py`, conservando debajo la anterior mientras haya licencias suyas vigentes; `PUBLIC_KEY_HEX` es solo un alias derivado de la primera)
 - `python reset_licencia.py` — elimina la licencia local del Keyring para pruebas
 
 Windows es requerido en tiempo de ejecución: las credenciales y licencias se almacenan en el Administrador de Credenciales de Windows vía `keyring`.
