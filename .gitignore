@@ -32,3 +32,7 @@ pdfs_uy.md
 
 # Instalador generado por Inno Setup
 dist/installer/
+
+# Grafo de conocimiento de graphify (solo local; lo actualiza el hook post-commit)
+graphify-out/
+.gitattributes
