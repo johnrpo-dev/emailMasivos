@@ -2,7 +2,7 @@
 
 SEMS Pro es una aplicación de escritorio para Windows diseñada para laboratorios clínicos y organizaciones que necesitan **entregar documentos confidenciales por correo de forma masiva y segura**: cifra localmente cada PDF con AES-256 (PDF 2.0 / R6) usando la cédula del destinatario como clave, y lo envía por SMTP con STARTTLS/SSL.
 
-Construida bajo principios de **Privacidad por Diseño (Privacy by Design)**, con arquitectura de seguridad auditada e interfaz clínica moderna (modo claro/oscuro).
+Construida bajo principios de **Privacidad por Diseño (Privacy by Design)**, con arquitectura de seguridad [auditada](AUDITORIA_FUNCIONAL.md) e interfaz clínica moderna (modo claro/oscuro).
 
 ---
 
@@ -125,3 +125,15 @@ Resultado: `dist/Envio_Masivo_Seguro/` (ejecutable + `_internal`; deben distribu
    iscc installer.iss
    ```
 Resultado: `dist/installer/SEMS_Pro_Setup_<versión>.exe` — es el artefacto que se entrega al cliente (instala la app, EULA, accesos directos y desinstalador).
+
+---
+
+## 📚 Documentación del proyecto
+
+| Documento | Contenido |
+| :--- | :--- |
+| [AUDITORIA_FUNCIONAL.md](AUDITORIA_FUNCIONAL.md) | Auditoría funcional cerrada: hallazgos, correcciones y pruebas que las respaldan |
+| [ROADMAP.md](ROADMAP.md) | Plan de trabajo y obligaciones del contrato de soporte |
+| `Guia_Operacion_SEMS_Pro.pdf` | Manual paso a paso para el personal que opera la aplicación |
+| `Guia_TI_SEMS_Pro.pdf` | Despliegue, red, seguridad y diagnóstico para el área de tecnología |
+| `Guia_MesaAyuda_SEMS_Pro.pdf` | Atención de primer nivel: qué preguntar, qué resolver y cuándo escalar |
