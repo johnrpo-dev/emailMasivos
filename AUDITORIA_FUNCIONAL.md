@@ -4,7 +4,7 @@
 | :-- | :-- |
 | **Estado** | **CERRADA** — todos los hallazgos corregidos, salvo uno descartado por regla de negocio |
 | **Correcciones** | 19/07/2026, commit `89fae44` |
-| **Última verificación contra el código** | 24/10/2026, versión 1.2.1 — 54 pruebas automáticas en verde |
+| **Última verificación contra el código** | 24/10/2026, versión 1.2.1 — 75 pruebas automáticas en verde |
 
 ## Alcance
 
@@ -46,7 +46,7 @@ reintentar.
 **Corrección.** `WorkflowOrchestrator._register_chunk_failures` registra cada registro pendiente
 como fallido reintentable, tanto si el hilo no logra conectar como si falla a mitad del lote.
 
-**Prueba:** sin prueba dedicada.
+**Prueba:** `tests/test_orchestrator_resiliencia.py` → `TestHiloCaido`.
 
 ---
 
@@ -55,12 +55,12 @@ como fallido reintentable, tanto si el hilo no logra conectar como si falla a mi
 | # | Problema | Corrección | Prueba |
 | :-- | :-- | :-- | :-- |
 | 1 | Un destinatario recuperado en un reintento seguía como "Fallido" en el historial, y el lote seguía ofreciendo correcciones ya aplicadas | La depuración de recuperados lo marca como **Recuperado**, actualiza el contador y poda las correcciones aplicadas | `test_retry_purge.py` → `TestPurgeRecoveredFailures` |
-| 2 | El historial y el monitor en vivo contaban los éxitos de forma distinta | El lote usa los contadores reales de los hilos como única fuente | Sin prueba dedicada |
+| 2 | El historial y el monitor en vivo contaban los éxitos de forma distinta | El lote usa los contadores reales de los hilos como única fuente | `test_orchestrator_resiliencia.py` → `TestContadoresDelLote` |
 | 3 | Dos filas iguales del CSV producen dos correos | **Descartado** (ver abajo) | — |
 | 4 | `usuario@gmail.con` se aceptaba como válido | Validación de terminación de dominio en proveedores conocidos, con sugerencia de corrección | `test_email_validator_tld.py` |
 | 5 | Un `config.json` dañado ocultaba la contraseña del correo guardada en el Administrador de credenciales | La lectura de credenciales es independiente del archivo de configuración | `test_config_manager.py` |
-| 6 | Los nombres de los PDF, que suelen contener el nombre del paciente, quedaban completos en el registro | Enmascarado con `mask_filename` | Sin prueba dedicada |
-| 7 | Riesgo de error de fuentes al pasar de la activación al aviso de período de gracia | Se reinicia la caché de fuentes antes de crear la ventana temporal | Sin prueba dedicada |
+| 6 | Los nombres de los PDF, que suelen contener el nombre del paciente, quedaban completos en el registro | Enmascarado con `mask_filename` | `test_logger.py` y `test_orchestrator_resiliencia.py` → `TestEnmascaradoEnRegistro` |
+| 7 | Riesgo de error de fuentes al pasar de la activación al aviso de período de gracia | Se reinicia la caché de fuentes antes de crear la ventana temporal | `test_arranque.py` → `TestAvisoDePeriodoDeGracia` |
 | 8 | La detección de retroceso del reloj era débil | La marca de último uso solo avanza, se refresca cada 10 minutos y su ausencia queda registrada | `test_license_last_run.py` |
 | 9 | El archivo de compilación de PyInstaller quedaba fuera del repositorio | Excepción explícita en `.gitignore` | — |
 | 10 | Faltaban pruebas de configuración, licencias, reintentos y validación | Se agregaron los archivos de prueba citados en esta tabla | — |
@@ -79,12 +79,12 @@ documento. La regla quedó documentada en `CLAUDE.md` para que ninguna revisión
 | Problema | Corrección | Prueba |
 | :-- | :-- | :-- |
 | Un reintento consumía un intento aunque terminara en "no hay correcciones para aplicar" | El intento solo se cuenta cuando el envío realmente arranca | `test_retry_purge.py` |
-| Un fallo grave mostraba "-1 exitosos" en la consola | El contador nunca baja de cero | — |
-| Un CSV sin filas mostraba "finalizado con éxito sin errores" | Muestra "El archivo CSV no contiene registros para procesar" | — |
-| El destinatario del correo no pasaba por el saneamiento de cabeceras | Se sanea igual que el remitente y el asunto | — |
-| Código sin uso duplicado en el orquestador | Eliminado | — |
-| `mask_email` devolvía intacto un texto sin `@` | También lo enmascara | — |
-| La vista previa abría una ventana vacía antes de validar el CSV | Valida el archivo antes de crear la ventana | — |
+| Un fallo grave mostraba "-1 exitosos" en la consola | El contador nunca baja de cero | `test_workflow_controller.py` |
+| Un CSV sin filas mostraba "finalizado con éxito sin errores" | Muestra "El archivo CSV no contiene registros para procesar" | `test_workflow_controller.py` |
+| El destinatario del correo no pasaba por el saneamiento de cabeceras | Se sanea igual que el remitente y el asunto | `test_email_service.py` |
+| Código sin uso duplicado en el orquestador | Eliminado | No aplica: no tiene comportamiento que probar |
+| `mask_email` devolvía intacto un texto sin `@` | También lo enmascara | `test_logger.py` |
+| La vista previa abría una ventana vacía antes de validar el CSV | Valida el archivo antes de crear la ventana | `test_arranque.py` → `TestVistaPreviaValidaAntesDeAbrir` |
 | La depuración de recuperados podía descartar un pendiente legítimo con clave repetida | Las claves repetidas quedan fuera de la depuración | `test_retry_purge.py` |
 
 ---
@@ -114,11 +114,15 @@ Controles revisados que funcionaban correctamente y no requirieron cambios:
 - Búsqueda del historial por hash HMAC, consistente con el registro de envíos.
 - Configuración y llaves de firma excluidas del repositorio.
 
-## Cobertura pendiente
+## Cobertura
 
-Los hallazgos B, 2, 6 y 7 y la mayoría de los menores están corregidos y verificados en el
-código, pero no tienen prueba automática propia. Agregarlas protegería esas correcciones de
-regresiones en cambios futuros.
+Todas las correcciones tienen prueba automática propia, salvo la eliminación de código sin uso,
+que no tiene comportamiento que probar.
+
+Las pruebas agregadas el 24/10/2026 (hallazgos B, 2, 6 y 7 y los menores) se validaron
+reintroduciendo a propósito cada defecto original en el código: las ocho regresiones simuladas
+fueron detectadas por su prueba correspondiente. Eso confirma que las pruebas protegen las
+correcciones, y no solo que pasan.
 
 ## Cómo verificar
 
@@ -127,5 +131,6 @@ python -m unittest discover tests -v
 ```
 
 Archivos de prueba que respaldan esta auditoría: `test_retry_purge.py`, `test_config_manager.py`,
-`test_license_last_run.py`, `test_email_validator_tld.py`, `test_temp_cleanup.py` y
-`test_license_multikey.py`.
+`test_license_last_run.py`, `test_email_validator_tld.py`, `test_temp_cleanup.py`,
+`test_license_multikey.py`, `test_orchestrator_resiliencia.py`, `test_logger.py`,
+`test_workflow_controller.py`, `test_email_service.py` y `test_arranque.py`.

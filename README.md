@@ -39,7 +39,7 @@ Construida bajo principios de **Privacidad por Diseño (Privacy by Design)**, co
    ```
 
 ### Ejecutar la Suite de Pruebas
-54 pruebas unitarias cubren sanitización, Path Traversal, validación de dominios y TLDs, cifrado PDF, purga de reintentos, candado de concurrencia, resiliencia de configuración y licencias (llaves confiables y licencia perpetua):
+75 pruebas unitarias cubren sanitización, Path Traversal, validación de dominios y TLDs, cifrado PDF, purga de reintentos, candado de concurrencia, resiliencia ante fallos de hilos, enmascarado de datos personales en registros, saneamiento de cabeceras, resiliencia de configuración y licencias (llaves confiables y licencia perpetua):
 ```bash
 python -m unittest discover tests -v
 ```
